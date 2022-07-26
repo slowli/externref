@@ -17,8 +17,8 @@ pub fn externref(_attr: TokenStream, input: TokenStream) -> TokenStream {
         exports are supported";
 
     let output = match syn::parse::<Item>(input) {
-        Ok(Item::ForeignMod(module)) => for_foreign_module(&module),
-        Ok(Item::Fn(function)) => for_export(&function),
+        Ok(Item::ForeignMod(mut module)) => for_foreign_module(&mut module),
+        Ok(Item::Fn(mut function)) => for_export(&mut function),
         Ok(other_item) => {
             return darling::Error::custom(MSG)
                 .with_span(&other_item)
