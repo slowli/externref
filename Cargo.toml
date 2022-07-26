@@ -1,0 +1,21 @@
+[package]
+name = "externref"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+externref-macro = { version = "0.1.0", path = "crates/macro", optional = true }
+
+[features]
+default = ["macro"]
+macro = ["externref-macro"]
+
+[profile.wasm]
+inherits = "release"
+panic = "abort"
+codegen-units = 1
+opt-level = "z" # Optimize for size, rather than speed
+lto = true
+
+[workspace]
+members = [".", "crates/macro", "crates/processor", "e2e-tests"]
