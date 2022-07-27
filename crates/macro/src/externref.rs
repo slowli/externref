@@ -1,8 +1,9 @@
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{
-    spanned::Spanned, Attribute, FnArg, ForeignItem, Ident, ItemFn, ItemForeignMod, Lit, LitStr,
-    Meta, MetaList, NestedMeta, PatType, PathArguments, ReturnType, Signature, Type, TypePath,
+    spanned::Spanned, Attribute, FnArg, ForeignItem, GenericArgument, Ident, ItemFn,
+    ItemForeignMod, Lit, LitStr, Meta, MetaList, NestedMeta, PatType, PathArguments, Signature,
+    Type, TypePath,
 };
 
 use std::collections::HashMap;
@@ -48,13 +49,13 @@ fn attr_string(attrs: &[Attribute], name: &str) -> darling::Result<Option<String
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum ArgKind {
+enum SimpleResourceKind {
     Owned,
     Ref,
     MutRef,
 }
 
-impl ArgKind {
+impl SimpleResourceKind {
     fn is_resource(ty: &TypePath) -> bool {
         ty.path.segments.last().map_or(false, |segment| {
             segment.ident == "Resource"
@@ -83,31 +84,98 @@ impl ArgKind {
             _ => None,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ResourceKind {
+    Simple(SimpleResourceKind),
+    Option(SimpleResourceKind),
+}
+
+impl From<SimpleResourceKind> for ResourceKind {
+    fn from(simple: SimpleResourceKind) -> Self {
+        Self::Simple(simple)
+    }
+}
+
+impl ResourceKind {
+    fn parse_option(ty: &TypePath) -> Option<&Type> {
+        let segment = ty.path.segments.last()?;
+        if segment.ident == "Option" {
+            if let PathArguments::AngleBracketed(args) = &segment.arguments {
+                if args.args.len() == 1 {
+                    if let GenericArgument::Type(ty) = args.args.first().unwrap() {
+                        return Some(ty);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn from_type(ty: &Type) -> Option<Self> {
+        if let Some(kind) = SimpleResourceKind::from_type(ty) {
+            return Some(kind.into());
+        }
+
+        if let Type::Path(path) = ty {
+            Self::parse_option(path)
+                .and_then(|inner_ty| SimpleResourceKind::from_type(inner_ty).map(Self::Option))
+        } else {
+            None
+        }
+    }
+
+    fn simple_kind(self) -> SimpleResourceKind {
+        match self {
+            Self::Simple(simple) | Self::Option(simple) => simple,
+        }
+    }
 
     fn initialize_for_export(self, arg: &Ident) -> TokenStream {
-        let owned = quote!(unsafe { externref::Resource::new(#arg) });
-        match self {
-            Self::Owned => owned,
-            Self::Ref => quote!(&#owned),
-            Self::MutRef => quote!(&mut #owned),
+        let method_call = match self.simple_kind() {
+            SimpleResourceKind::Owned => None,
+            SimpleResourceKind::Ref => Some(quote!(.as_ref())),
+            SimpleResourceKind::MutRef => Some(quote!(.as_mut())),
+        };
+        let unwrap = match self {
+            Self::Option(_) => None,
+            Self::Simple(_) => Some(quote!(.expect("null reference passed from host"))),
+        };
+
+        quote! {
+            externref::Resource::new(#arg) #method_call #unwrap
         }
     }
 
     fn prepare_for_import(self, arg: &Ident) -> TokenStream {
-        match self {
-            Self::Ref | Self::MutRef => quote!(externref::Resource::as_raw(#arg)),
-            Self::Owned => quote!(externref::Resource::into_raw(#arg)),
+        let arg = match self {
+            Self::Simple(_) => quote!(core::option::Option::Some(#arg)),
+            Self::Option(_) => quote!(#arg),
+        };
+
+        match self.simple_kind() {
+            SimpleResourceKind::Ref | SimpleResourceKind::MutRef => {
+                quote!(externref::Resource::raw(#arg))
+            }
+            SimpleResourceKind::Owned => quote!(externref::Resource::take_raw(#arg)),
         }
     }
+}
+
+#[derive(Debug, PartialEq)]
+enum ReturnType {
+    Default,
+    NotResource,
+    Resource(ResourceKind),
 }
 
 #[derive(Debug)]
 struct Function {
     name: String,
     arg_count: usize,
-    resource_args: HashMap<usize, ArgKind>,
-    // `None` if the function does not have a return type
-    resource_return_type: Option<bool>,
+    resource_args: HashMap<usize, ResourceKind>,
+    return_type: ReturnType,
 }
 
 impl Function {
@@ -126,29 +194,27 @@ impl Function {
     fn from_sig(sig: &Signature, name_override: Option<String>) -> Self {
         let resource_args = sig.inputs.iter().enumerate().filter_map(|(i, arg)| {
             if let FnArg::Typed(PatType { ty, .. }) = arg {
-                return ArgKind::from_type(ty).map(|kind| (i, kind));
+                return ResourceKind::from_type(ty).map(|kind| (i, kind));
             }
             None
         });
-        let resource_return_type = match &sig.output {
-            ReturnType::Type(_, ty) => {
-                let is_resource =
-                    ArgKind::from_type(ty).map_or(false, |kind| kind == ArgKind::Owned);
-                Some(is_resource)
+        let return_type = match &sig.output {
+            syn::ReturnType::Type(_, ty) => {
+                ResourceKind::from_type(ty).map_or(ReturnType::NotResource, ReturnType::Resource)
             }
-            ReturnType::Default => None,
+            syn::ReturnType::Default => ReturnType::Default,
         };
 
         Self {
             name: name_override.unwrap_or_else(|| sig.ident.to_string()),
             arg_count: sig.inputs.len(),
             resource_args: resource_args.collect(),
-            resource_return_type,
+            return_type,
         }
     }
 
     fn needs_declaring(&self) -> bool {
-        !self.resource_args.is_empty() || self.resource_return_type == Some(true)
+        !self.resource_args.is_empty() || matches!(self.return_type, ReturnType::Resource(_))
     }
 
     fn declare(&self, module_name: Option<&str>) -> impl ToTokens {
@@ -176,6 +242,7 @@ impl Function {
         });
         let mut export_sig = raw.sig.clone();
         export_sig.abi = Some(syn::parse_quote!(extern "C"));
+        export_sig.unsafety = Some(syn::parse_quote!(unsafe));
         export_sig.ident = Ident::new("__externref_export", export_sig.ident.span());
 
         let mut args = Vec::with_capacity(export_sig.inputs.len());
@@ -185,7 +252,7 @@ impl Function {
                 typed_arg.pat = Box::new(syn::parse_quote!(#arg));
 
                 if let Some(kind) = self.resource_args.get(&i) {
-                    typed_arg.ty = Box::new(syn::parse_quote!(usize));
+                    typed_arg.ty = Box::new(syn::parse_quote!(externref::ExternRef));
                     args.push(kind.initialize_for_export(&arg));
                 } else {
                     args.push(quote!(#arg));
@@ -195,16 +262,18 @@ impl Function {
 
         let original_name = &raw.sig.ident;
         let delegation = quote!(#original_name(#(#args,)*));
-        let delegation = match self.resource_return_type {
-            Some(true) => {
-                export_sig.output = syn::parse_quote!(-> usize);
+        let delegation = match self.return_type {
+            ReturnType::Resource(kind) => {
+                export_sig.output = syn::parse_quote!(-> externref::ExternRef);
+                let output = Ident::new("__output", raw.sig.span());
+                let conversion = kind.prepare_for_import(&output);
                 quote! {
-                    let original_output = #delegation;
-                    unsafe { externref::Resource::into_raw(original_output) }
+                    let #output = #delegation;
+                    #conversion
                 }
             }
-            Some(false) => delegation,
-            None => quote!(#delegation;),
+            ReturnType::NotResource => delegation,
+            ReturnType::Default => quote!(#delegation;),
         };
 
         quote! {
@@ -238,35 +307,35 @@ impl Function {
         }
 
         let delegation = quote!(#new_ident(#(#args,)*));
-        let delegation = match self.resource_return_type {
-            Some(true) => {
+        let delegation = match self.return_type {
+            ReturnType::Resource(kind) => {
+                let output = Ident::new("__output", sig.span());
+                let init = kind.initialize_for_export(&output);
                 quote! {
-                    let original_output = #delegation;
-                    externref::Resource::new(original_output)
+                    let #output = #delegation;
+                    #init
                 }
             }
-            Some(false) => delegation,
-            None => quote!(#delegation;),
+            ReturnType::NotResource => delegation,
+            ReturnType::Default => quote!(#delegation;),
         };
 
         (quote!(#sig { #delegation }), new_ident)
     }
 
     fn create_externrefs(&self) -> impl ToTokens {
-        let args_and_return_type_count = if self.resource_return_type.is_some() {
-            self.arg_count + 1
-        } else {
+        let args_and_return_type_count = if matches!(self.return_type, ReturnType::Default) {
             self.arg_count
+        } else {
+            self.arg_count + 1
         };
         let bytes = (args_and_return_type_count + 7) / 8;
 
-        let maybe_ret_idx = self.resource_return_type.and_then(|is_resource| {
-            if is_resource {
-                Some(self.arg_count)
-            } else {
-                None
-            }
-        });
+        let maybe_ret_idx = if matches!(self.return_type, ReturnType::Resource(_)) {
+            Some(self.arg_count)
+        } else {
+            None
+        };
 
         let set_bits = self.resource_args.keys().copied();
         #[cfg(test)] // sort keys in deterministic order for testing
@@ -377,12 +446,12 @@ impl Imports {
                 for (i, arg) in fn_item.sig.inputs.iter_mut().enumerate() {
                     if function.resource_args.contains_key(&i) {
                         if let FnArg::Typed(typed_arg) = arg {
-                            typed_arg.ty = Box::new(syn::parse_quote!(usize));
+                            typed_arg.ty = Box::new(syn::parse_quote!(externref::ExternRef));
                         }
                     }
                 }
-                if function.resource_return_type == Some(true) {
-                    fn_item.sig.output = syn::parse_quote!(-> usize);
+                if matches!(function.return_type, ReturnType::Resource(_)) {
+                    fn_item.sig.output = syn::parse_quote!(-> externref::ExternRef);
                 }
 
                 functions.push((function, wrapper));
@@ -461,7 +530,7 @@ mod tests {
         let export_fn: ItemFn = syn::parse_quote! {
             pub extern "C" fn test_export(
                 sender: &mut Resource<Sender>,
-                buffer: Resource<Buffer>,
+                buffer: Option<Resource<Buffer>>,
                 some_ptr: *const u8,
             ) {
                 // does nothing
@@ -469,9 +538,12 @@ mod tests {
         };
         let parsed = Function::new(&export_fn).unwrap();
         assert_eq!(parsed.resource_args.len(), 2);
-        assert_eq!(parsed.resource_args[&0], ArgKind::MutRef);
-        assert_eq!(parsed.resource_args[&1], ArgKind::Owned);
-        assert_eq!(parsed.resource_return_type, None);
+        assert_eq!(parsed.resource_args[&0], SimpleResourceKind::MutRef.into());
+        assert_eq!(
+            parsed.resource_args[&1],
+            ResourceKind::Option(SimpleResourceKind::Owned)
+        );
+        assert_eq!(parsed.return_type, ReturnType::Default);
 
         let wrapper = parsed.wrap_export(&export_fn, None);
         let wrapper: syn::Item = syn::parse_quote!(#wrapper);
@@ -479,14 +551,16 @@ mod tests {
             const _: () = {
                 #[no_mangle]
                 #[export_name = "test_export"]
-                extern "C" fn __externref_export(
-                    __arg0: usize,
-                    __arg1: usize,
+                unsafe extern "C" fn __externref_export(
+                    __arg0: externref::ExternRef,
+                    __arg1: externref::ExternRef,
                     __arg2: *const u8,
                 ) {
                     test_export(
-                        &mut unsafe { externref::Resource::new(__arg0) },
-                        unsafe { externref::Resource::new(__arg1) },
+                        externref::Resource::new(__arg0)
+                            .as_mut()
+                            .expect("null reference passed from host"),
+                        externref::Resource::new(__arg1),
                         __arg2,
                     );
                 }
@@ -516,12 +590,12 @@ mod tests {
                 __arg1: *const u8,
                 __arg2: usize,
             ) -> Resource<Bytes> {
-                let original_output = __externref_send_message(
-                    externref::Resource::as_raw(__arg0),
+                let __output = __externref_send_message(
+                    externref::Resource::raw(core::option::Option::Some(__arg0)),
                     __arg1,
                     __arg2,
                 );
-                externref::Resource::new(original_output)
+                externref::Resource::new(__output).expect("null reference passed from host")
             }
         };
         assert_eq!(wrapper, expected, "{}", quote!(#wrapper));
@@ -546,10 +620,10 @@ mod tests {
             extern "C" {
                 #[link_name = "send_message"]
                 fn __externref_send_message(
-                    sender: usize,
+                    sender: externref::ExternRef,
                     message_ptr: *const u8,
                     message_len: usize,
-                ) -> usize;
+                ) -> externref::ExternRef;
             }
         };
         assert_eq!(foreign_mod, expected, "{}", quote!(#foreign_mod));

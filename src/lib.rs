@@ -108,6 +108,11 @@ pub mod signature;
 #[cfg(feature = "macro")]
 pub use externref_macro::externref;
 
+/// `externref` surrogate.
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct ExternRef(usize);
+
 /// Host resource exposed to WASM.
 ///
 /// Internally, a resource is just an index into the `externref`s table; thus, it is completely
@@ -120,7 +125,7 @@ pub struct Resource<T> {
 }
 
 impl<T> Resource<T> {
-    /// Creates a new resource.
+    /// Creates a new resource converting it from.
     ///
     /// # Safety
     ///
@@ -129,22 +134,28 @@ impl<T> Resource<T> {
     /// a "real" `usize`. The proper use is ensured by the [`externref`] macro.
     /// Use this method manually only if you know what you are doing.
     #[inline(always)]
-    pub unsafe fn new(id: usize) -> Self {
+    pub unsafe fn new(id: ExternRef) -> Option<Self> {
         #[cfg(target_arch = "wasm32")]
         #[link(wasm_import_module = "externref")]
         extern "C" {
             #[link_name = "insert"]
-            fn insert_externref(id: usize) -> usize;
+            fn insert_externref(id: ExternRef) -> usize;
         }
 
         #[cfg(not(target_arch = "wasm32"))]
-        unsafe fn insert_externref(id: usize) -> usize {
-            id
+        #[allow(clippy::needless_pass_by_value)]
+        unsafe fn insert_externref(id: ExternRef) -> usize {
+            id.0
         }
 
-        Self {
-            id: insert_externref(id),
-            _ty: PhantomData,
+        let id = insert_externref(id);
+        if id == usize::MAX {
+            None
+        } else {
+            Some(Self {
+                id,
+                _ty: PhantomData,
+            })
         }
     }
 
@@ -157,30 +168,31 @@ impl<T> Resource<T> {
     /// it is not a "real" `usize`. The proper use is ensured by the [`externref`] macro.
     /// Use this method manually only if you know what you are doing.
     #[inline(always)]
-    pub unsafe fn as_raw(&self) -> usize {
+    pub unsafe fn raw(this: Option<&Self>) -> ExternRef {
         #[cfg(target_arch = "wasm32")]
         #[link(wasm_import_module = "externref")]
         extern "C" {
             #[link_name = "get"]
-            fn get_externref(id: usize) -> usize;
+            fn get_externref(id: usize) -> ExternRef;
         }
 
         #[cfg(not(target_arch = "wasm32"))]
-        unsafe fn get_externref(id: usize) -> usize {
-            id
+        unsafe fn get_externref(id: usize) -> ExternRef {
+            ExternRef(id)
         }
 
-        get_externref(self.id)
+        get_externref(this.map_or(usize::MAX, |resource| resource.id))
     }
 
     /// Obtains an `externref` from this resource and drops the resource.
     ///
     /// # Safety
     ///
-    /// See [`Self::as_raw()`] for safety considerations.
+    /// See [`Self::raw()`] for safety considerations.
     #[inline(always)]
-    pub unsafe fn into_raw(self) -> usize {
-        self.as_raw()
+    #[allow(clippy::needless_pass_by_value)]
+    pub unsafe fn take_raw(this: Option<Self>) -> ExternRef {
+        Self::raw(this.as_ref())
     }
 }
 

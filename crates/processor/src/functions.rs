@@ -1,7 +1,7 @@
 //! Patched functions for working with `externref`s.
 
 use walrus::{
-    ir::{self, BinaryOp, UnaryOp},
+    ir::{self, BinaryOp},
     FunctionBuilder, FunctionId, FunctionKind as WasmFunctionKind, ImportKind, InstrSeqBuilder,
     LocalId, Module, ModuleImports, TableId, ValType,
 };
@@ -74,6 +74,9 @@ impl PatchedFunctions {
     // We want to implement the following logic:
     //
     // ```
+    // if value == NULL {
+    //     return -1;
+    // }
     // let table_len = externrefs_table.len();
     // let mut free_idx;
     // if table_len > 0 {
@@ -105,11 +108,18 @@ impl PatchedFunctions {
         let free_idx = module.locals.add(ValType::I32);
         builder
             .func_body()
-            .table_size(table_id)
-            .unop(UnaryOp::I32Eqz)
+            .local_get(value)
+            .ref_is_null()
             .if_else(
                 None,
+                |value_is_null| {
+                    value_is_null.i32_const(-1).return_();
+                },
                 |_| {},
+            )
+            .table_size(table_id)
+            .if_else(
+                None,
                 |table_is_not_empty| {
                     table_is_not_empty
                         .table_size(table_id)
@@ -120,6 +130,7 @@ impl PatchedFunctions {
                             Self::create_loop(loop_wrapper, table_id, free_idx);
                         });
                 },
+                |_| {},
             )
             .local_get(free_idx) // == 0
             .table_size(table_id)
@@ -160,33 +171,29 @@ impl PatchedFunctions {
                 .local_get(free_idx)
                 .table_get(table_id)
                 .ref_is_null()
-                .unop(UnaryOp::I32Eqz)
                 .if_else(
                     None,
-                    |is_not_null| {
-                        is_not_null
-                            .local_get(free_idx) // == 1
-                            .unop(UnaryOp::I32Eqz)
-                            .if_else(
-                                None,
-                                |is_zero| {
-                                    is_zero
-                                        .table_size(table_id)
-                                        .local_set(free_idx)
-                                        .br(break_id);
-                                },
-                                |is_not_zero| {
-                                    is_not_zero
-                                        .local_get(free_idx)
-                                        .i32_const(1)
-                                        .binop(BinaryOp::I32Sub)
-                                        .local_set(free_idx)
-                                        .br(loop_id);
-                                },
-                            );
-                    },
                     |is_null| {
                         is_null.br(break_id);
+                    },
+                    |is_not_null| {
+                        is_not_null.local_get(free_idx).if_else(
+                            None,
+                            |is_not_zero| {
+                                is_not_zero
+                                    .local_get(free_idx)
+                                    .i32_const(1)
+                                    .binop(BinaryOp::I32Sub)
+                                    .local_set(free_idx)
+                                    .br(loop_id);
+                            },
+                            |is_zero| {
+                                is_zero
+                                    .table_size(table_id)
+                                    .local_set(free_idx)
+                                    .br(break_id);
+                            },
+                        );
                     },
                 );
         });
@@ -196,7 +203,20 @@ impl PatchedFunctions {
         let mut builder =
             FunctionBuilder::new(&mut module.types, &[ValType::I32], &[ValType::Externref]);
         let idx = module.locals.add(ValType::I32);
-        builder.func_body().local_get(idx).table_get(table_id);
+        builder
+            .func_body()
+            .local_get(idx)
+            .i32_const(-1)
+            .binop(BinaryOp::I32Eq)
+            .if_else(
+                ValType::Externref,
+                |null_requested| {
+                    null_requested.ref_null(ValType::Externref);
+                },
+                |elem_requested| {
+                    elem_requested.local_get(idx).table_get(table_id);
+                },
+            );
         builder.finish(vec![idx], &mut module.funcs)
     }
 
