@@ -1,102 +1,21 @@
 use assert_matches::assert_matches;
+use once_cell::sync::Lazy;
 use wasmtime::{Caller, Engine, Extern, ExternRef, Linker, Module, Store, Table, Trap, Val};
 
 use std::{
     collections::HashSet,
-    env, fs,
-    path::{Path, PathBuf},
-    process::{Command, Stdio},
     sync::{Arc, Weak},
 };
 
 use externref_processor::process_bytes;
 
-const WASM_PROFILE: &str = "wasm";
+mod compile;
 
-fn target_dir() -> PathBuf {
-    let mut path = env::current_exe().expect("Cannot get path to executing test");
-    path.pop();
-    if path.ends_with("deps") {
-        path.pop();
-    }
-    path
-}
-
-fn wasm_target_dir(target_dir: PathBuf) -> PathBuf {
-    let mut root_dir = target_dir;
-    while !root_dir.join("wasm32-unknown-unknown").is_dir() {
-        assert!(
-            root_dir.pop(),
-            "Cannot find dir for the `wasm32-unknown-unknown` target"
-        );
-    }
-    root_dir.join("wasm32-unknown-unknown").join(WASM_PROFILE)
-}
-
-fn compile_wasm() -> PathBuf {
-    let profile = format!("--profile={}", WASM_PROFILE);
-    let mut command = Command::new("cargo");
-    command.args([
-        "build",
-        "--lib",
-        "--target",
-        "wasm32-unknown-unknown",
-        &profile,
-    ]);
-
-    let mut command = command
-        .stdin(Stdio::null())
-        .spawn()
-        .expect("cannot run cargo");
-    let exit_status = command.wait().expect("failed waiting for cargo");
-    assert!(
-        exit_status.success(),
-        "Compiling WASM module finished abnormally: {}",
-        exit_status
-    );
-
-    let wasm_dir = wasm_target_dir(target_dir());
-    let mut wasm_file = env!("CARGO_PKG_NAME").replace('-', "_");
-    wasm_file.push_str(".wasm");
-    wasm_dir.join(wasm_file)
-}
-
-fn optimize_wasm(wasm_file: &Path) -> PathBuf {
-    let mut opt_wasm_file = PathBuf::from(wasm_file);
-    opt_wasm_file.set_extension("opt.wasm");
-
-    let mut command = Command::new("wasm-opt")
-        .args(["-Os", "--enable-mutable-globals", "--strip-debug"])
-        .arg("-o")
-        .args([opt_wasm_file.as_ref(), wasm_file])
-        .stdin(Stdio::null())
-        .spawn()
-        .expect("cannot run wasm-opt");
-
-    let exit_status = command.wait().expect("failed waiting for wasm-opt");
-    assert!(
-        exit_status.success(),
-        "Optimizing WASM module finished abnormally: {}",
-        exit_status
-    );
-    opt_wasm_file
-}
-
-fn compile(optimize: bool) -> Vec<u8> {
-    let mut wasm_file = compile_wasm();
-    if optimize {
-        wasm_file = optimize_wasm(&wasm_file);
-    }
-    fs::read(&wasm_file).unwrap_or_else(|err| {
-        panic!(
-            "Error reading file `{}`: {}",
-            wasm_file.to_string_lossy(),
-            err
-        )
-    })
-}
+use crate::compile::compile;
 
 type RefAssertion = fn(Caller<'_, Data>, &Table);
+
+static OPTIMIZED_MODULE: Lazy<Vec<u8>> = Lazy::new(|| compile(true));
 
 #[derive(Debug)]
 struct HostSender {
@@ -158,6 +77,18 @@ fn send_message(
     Ok(Some(ExternRef::new(bytes)))
 }
 
+fn message_len(resource: Option<ExternRef>) -> Result<u32, Trap> {
+    if let Some(resource) = resource {
+        let str = resource
+            .data()
+            .downcast_ref::<Arc<str>>()
+            .ok_or_else(|| Trap::new("passed reference has incorrect type"))?;
+        Ok(u32::try_from(str.len()).unwrap())
+    } else {
+        Ok(0)
+    }
+}
+
 fn inspect_refs(mut ctx: Caller<'_, Data>) {
     let refs = ctx.data().externrefs.unwrap();
     let assertions = ctx.data_mut().ref_assertions.pop().unwrap();
@@ -184,19 +115,25 @@ fn assert_refs(mut ctx: Caller<'_, Data>, table: &Table, buffers_liveness: &[boo
     }
 }
 
-#[test]
-fn transform_after_optimization() {
-    let module = compile(true);
-    let module = process_bytes(&module).unwrap();
-    let module = Module::new(&Engine::default(), &module).unwrap();
-
-    let mut linker = Linker::new(module.engine());
+fn create_linker(engine: &Engine) -> Linker<Data> {
+    let mut linker = Linker::new(engine);
     linker
         .func_wrap("test", "send_message", send_message)
         .unwrap();
     linker
+        .func_wrap("test", "message_len", message_len)
+        .unwrap();
+    linker
         .func_wrap("test", "inspect_refs", inspect_refs)
         .unwrap();
+    linker
+}
+
+#[test]
+fn transform_after_optimization() {
+    let module = process_bytes(&OPTIMIZED_MODULE).unwrap();
+    let module = Module::new(&Engine::default(), &module).unwrap();
+    let linker = create_linker(module.engine());
 
     let ref_assertions: Vec<RefAssertion> = vec![
         |caller, table| assert_refs(caller, table, &[]),
@@ -225,4 +162,22 @@ fn transform_after_optimization() {
     for i in 0..size {
         assert_matches!(externrefs.get(&mut store, i).unwrap(), Val::ExternRef(None));
     }
+}
+
+#[test]
+fn null_references() {
+    let module = process_bytes(&OPTIMIZED_MODULE).unwrap();
+    let module = Module::new(&Engine::default(), &module).unwrap();
+    let linker = create_linker(module.engine());
+    let mut store = Store::new(module.engine(), Data::new(vec![]));
+    let instance = linker.instantiate(&mut store, &module).unwrap();
+
+    let test_fn = instance
+        .get_typed_func::<Option<ExternRef>, (), _>(&mut store, "test_nulls")
+        .unwrap();
+    let sender = store.data_mut().push_sender("sender");
+    test_fn
+        .call(&mut store, Some(ExternRef::new(sender)))
+        .unwrap();
+    test_fn.call(&mut store, None).unwrap();
 }
