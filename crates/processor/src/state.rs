@@ -29,11 +29,7 @@ impl ProcessingState {
         self.patched_fns.replace_calls(module);
     }
 
-    pub fn process_function(
-        &self,
-        function: &Function<'_>,
-        module: &mut Module,
-    ) -> Result<(), Error> {
+    pub fn process_function(function: &Function<'_>, module: &mut Module) -> Result<(), Error> {
         match function.kind {
             FunctionKind::Export => {
                 let export = module
@@ -45,7 +41,7 @@ impl ProcessingState {
                     ExportItem::Function(fn_id) => *fn_id,
                     _ => return Err(Error::UnexpectedExportType(function.name.to_owned())),
                 };
-                self.transform_local_fn(module, fn_id, function)?;
+                Self::transform_local_fn(module, fn_id, function)?;
             }
 
             FunctionKind::Import(module_name) => {
@@ -74,7 +70,6 @@ impl ProcessingState {
     }
 
     fn transform_local_fn(
-        &self,
         module: &mut Module,
         fn_id: FunctionId,
         function: &Function<'_>,

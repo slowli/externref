@@ -4,9 +4,12 @@ use std::{error, fmt};
 
 use externref::signature::ReadError;
 
+/// Location of a `Resource`: a function argument or a return type.
 #[derive(Debug)]
 pub enum Location {
+    /// Argument with the specified zero-based index.
     Arg(usize),
+    /// Return type with the specified zero-based index.
     ReturnType(usize),
 }
 
@@ -19,20 +22,28 @@ impl fmt::Display for Location {
     }
 }
 
+/// Errors that can occur when [`process()`]ing a WASM module.
+///
+/// [`process()`]: crate::process()
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Error {
+    /// Error reading the custom section with function declarations from the module.
     Read(ReadError),
+    /// Error parsing the WASM module.
     Wasm(anyhow::Error),
-
     /// Missing imported function with the enclosed module / name.
     NoImport {
+        /// Name of the module.
         module: String,
+        /// Name of the function.
         name: String,
     },
     /// Unexpected type of an import (expected a function).
     UnexpectedImportType {
+        /// Name of the module.
         module: String,
+        /// Name of the function.
         name: String,
     },
     /// Missing exported function with the enclosed name.
@@ -41,16 +52,24 @@ pub enum Error {
     UnexpectedExportType(String),
     /// Imported or exported function has unexpected arity.
     UnexpectedArity {
+        /// Name of the module; `None` for exported functions.
         module: Option<String>,
+        /// Name of the function.
         name: String,
+        /// Expected arity of the function.
         expected_arity: usize,
+        /// Actual arity of the function.
         real_arity: usize,
     },
     /// Argument or return type of a function has unexpected type.
     UnexpectedType {
+        /// Name of the module; `None` for exported functions.
         module: Option<String>,
+        /// Name of the function.
         name: String,
+        /// Location of an argument / return type in the function.
         location: Location,
+        /// Actual type of the function (the expected type is always `i32`).
         real_type: walrus::ValType,
     },
 }

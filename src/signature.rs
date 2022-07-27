@@ -1,4 +1,4 @@
-//! Function signatures.
+//! Function signatures recorded into a custom section of WASM modules.
 
 use std::{
     error, fmt,
@@ -12,6 +12,7 @@ pub struct BitSliceBuilder<const BYTES: usize> {
 }
 
 impl<const BYTES: usize> BitSliceBuilder<BYTES> {
+    #[must_use]
     pub const fn with_set_bit(mut self, bit_idx: usize) -> Self {
         assert!(bit_idx < self.bit_len);
         self.bytes[bit_idx / 8] |= 1 << (bit_idx % 8);
@@ -119,7 +120,7 @@ impl error::Error for ReadError {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match &self.kind {
             ReadErrorKind::Utf8(err) => Some(err),
-            _ => None,
+            ReadErrorKind::UnexpectedEof => None,
         }
     }
 }
@@ -176,6 +177,7 @@ impl<'a> FunctionKind<'a> {
         }
     }
 
+    #[allow(clippy::cast_possible_truncation)] // `TryFrom` cannot be used in const fns
     const fn write_to_custom_section<const N: usize>(
         &self,
         mut buffer: [u8; N],
@@ -223,6 +225,7 @@ impl<'a> Function<'a> {
         self.kind.len_in_custom_section() + 4 + self.name.len() + 4 + self.externrefs.bytes.len()
     }
 
+    #[allow(clippy::cast_possible_truncation)] // `TryFrom` cannot be used in const fns
     pub const fn custom_section<const N: usize>(&self) -> [u8; N] {
         debug_assert!(N == self.custom_section_len());
         let (mut buffer, mut pos) = self.kind.write_to_custom_section([0_u8; N]);
