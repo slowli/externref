@@ -2,12 +2,9 @@ use assert_matches::assert_matches;
 use once_cell::sync::Lazy;
 use wasmtime::{Caller, Engine, Extern, ExternRef, Linker, Module, Store, Table, Trap, Val};
 
-use std::{
-    collections::HashSet,
-    sync::{Arc, Weak},
-};
+use std::collections::HashSet;
 
-use externref_processor::process_bytes;
+use externref_processor::Processor;
 
 mod compile;
 
@@ -26,7 +23,7 @@ struct Data {
     externrefs: Option<Table>,
     ref_assertions: Vec<RefAssertion>,
     senders: HashSet<String>,
-    buffers: Vec<Weak<str>>,
+    dropped: Vec<ExternRef>,
 }
 
 impl Data {
@@ -36,7 +33,7 @@ impl Data {
             externrefs: None,
             ref_assertions,
             senders: HashSet::new(),
-            buffers: vec![],
+            dropped: vec![],
         }
     }
 
@@ -44,6 +41,15 @@ impl Data {
         let name = name.into();
         self.senders.insert(name.clone());
         HostSender { key: name }
+    }
+
+    fn assert_drops(&self, expected_strings: &[&str]) {
+        let dropped_strings = self
+            .dropped
+            .iter()
+            .filter_map(|drop| drop.data().downcast_ref::<Box<str>>().map(AsRef::as_ref));
+        let dropped_strings: Vec<&str> = dropped_strings.collect();
+        assert_eq!(dropped_strings, *expected_strings);
     }
 }
 
@@ -72,8 +78,7 @@ fn send_message(
         .ok_or_else(|| Trap::new("passed reference has incorrect type"))?;
     assert!(ctx.data().senders.contains(&sender.key));
 
-    let bytes = Arc::<str>::from(buffer);
-    ctx.data_mut().buffers.push(Arc::downgrade(&bytes));
+    let bytes = Box::<str>::from(buffer);
     Ok(Some(ExternRef::new(bytes)))
 }
 
@@ -81,7 +86,7 @@ fn message_len(resource: Option<ExternRef>) -> Result<u32, Trap> {
     if let Some(resource) = resource {
         let str = resource
             .data()
-            .downcast_ref::<Arc<str>>()
+            .downcast_ref::<Box<str>>()
             .ok_or_else(|| Trap::new("passed reference has incorrect type"))?;
         Ok(u32::try_from(str.len()).unwrap())
     } else {
@@ -108,11 +113,16 @@ fn assert_refs(mut ctx: Caller<'_, Data>, table: &Table, buffers_liveness: &[boo
     for (buffer_ref, &live) in refs[1..].iter().zip(buffers_liveness) {
         if live {
             let buffer_ref = buffer_ref.as_ref().unwrap();
-            assert!(buffer_ref.data().is::<Arc<str>>());
+            assert!(buffer_ref.data().is::<Box<str>>());
         } else {
             assert!(buffer_ref.is_none());
         }
     }
+}
+
+fn drop_ref(mut ctx: Caller<'_, Data>, dropped: Option<ExternRef>) {
+    let dropped = dropped.expect("drop fn called with null ref");
+    ctx.data_mut().dropped.push(dropped);
 }
 
 fn create_linker(engine: &Engine) -> Linker<Data> {
@@ -126,12 +136,16 @@ fn create_linker(engine: &Engine) -> Linker<Data> {
     linker
         .func_wrap("test", "inspect_refs", inspect_refs)
         .unwrap();
+    linker.func_wrap("test", "drop_ref", drop_ref).unwrap();
     linker
 }
 
 #[test]
 fn transform_after_optimization() {
-    let module = process_bytes(&OPTIMIZED_MODULE).unwrap();
+    let module = Processor::default()
+        .set_drop_fn("test", "drop_ref")
+        .process_bytes(&OPTIMIZED_MODULE)
+        .unwrap();
     let module = Module::new(&Engine::default(), &module).unwrap();
     let linker = create_linker(module.engine());
 
@@ -156,6 +170,10 @@ fn transform_after_optimization() {
         .call(&mut store, Some(ExternRef::new(sender)))
         .unwrap();
 
+    store
+        .data()
+        .assert_drops(&["test", "some other string", "42"]);
+
     store.gc();
     let size = externrefs.size(&store);
     assert_eq!(size, 4); // sender + 3 buffers
@@ -166,7 +184,9 @@ fn transform_after_optimization() {
 
 #[test]
 fn null_references() {
-    let module = process_bytes(&OPTIMIZED_MODULE).unwrap();
+    let module = Processor::default()
+        .process_bytes(&OPTIMIZED_MODULE)
+        .unwrap();
     let module = Module::new(&Engine::default(), &module).unwrap();
     let linker = create_linker(module.engine());
     let mut store = Store::new(module.engine(), Data::new(vec![]));

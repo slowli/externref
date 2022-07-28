@@ -9,7 +9,7 @@ use std::{collections::HashMap, mem};
 
 use crate::{
     functions::{ExternrefImports, PatchedFunctions},
-    Error, Location,
+    Error, Location, Processor,
 };
 use externref::signature::{Function, FunctionKind};
 
@@ -19,9 +19,9 @@ pub(crate) struct ProcessingState {
 }
 
 impl ProcessingState {
-    pub fn new(module: &mut Module) -> Result<Self, Error> {
+    pub fn new(module: &mut Module, processor: &Processor<'_>) -> Result<Self, Error> {
         let imports = ExternrefImports::new(&mut module.imports)?;
-        let patched_fns = PatchedFunctions::new(module, &imports);
+        let patched_fns = PatchedFunctions::new(module, &imports, processor);
         Ok(Self { patched_fns })
     }
 

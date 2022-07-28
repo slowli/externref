@@ -8,7 +8,7 @@ use walrus::{
 
 use std::collections::HashMap;
 
-use crate::Error;
+use crate::{Error, Processor};
 
 #[derive(Debug)]
 pub(crate) struct ExternrefImports {
@@ -51,9 +51,9 @@ pub(crate) struct PatchedFunctions {
 }
 
 impl PatchedFunctions {
-    pub fn new(module: &mut Module, imports: &ExternrefImports) -> Self {
+    pub fn new(module: &mut Module, imports: &ExternrefImports, processor: &Processor<'_>) -> Self {
         let table_id = module.tables.add_local(0, None, ValType::Externref);
-        module.exports.add("externrefs", table_id);
+        module.exports.add(processor.table_name, table_id);
 
         let mut fn_mapping = HashMap::with_capacity(3);
         if let Some(fn_id) = imports.insert {
@@ -66,7 +66,11 @@ impl PatchedFunctions {
         }
         if let Some(fn_id) = imports.drop {
             module.funcs.delete(fn_id);
-            fn_mapping.insert(fn_id, Self::patch_drop_fn(module, table_id));
+            let drop_fn_id = processor.drop_fn_name.map(|(module_name, name)| {
+                let ty = module.types.add(&[ValType::Externref], &[]);
+                module.add_import_func(module_name, name, ty).0
+            });
+            fn_mapping.insert(fn_id, Self::patch_drop_fn(module, table_id, drop_fn_id));
         }
         Self { fn_mapping }
     }
@@ -220,11 +224,22 @@ impl PatchedFunctions {
         builder.finish(vec![idx], &mut module.funcs)
     }
 
-    fn patch_drop_fn(module: &mut Module, table_id: TableId) -> FunctionId {
+    fn patch_drop_fn(
+        module: &mut Module,
+        table_id: TableId,
+        drop_fn_id: Option<FunctionId>,
+    ) -> FunctionId {
         let mut builder = FunctionBuilder::new(&mut module.types, &[ValType::I32], &[]);
         let idx = module.locals.add(ValType::I32);
-        builder
-            .func_body()
+
+        let mut instr_builder = builder.func_body();
+        if let Some(drop_fn_id) = drop_fn_id {
+            instr_builder
+                .local_get(idx)
+                .table_get(table_id)
+                .call(drop_fn_id);
+        }
+        instr_builder
             .local_get(idx)
             .ref_null(ValType::Externref)
             .table_set(table_id);
