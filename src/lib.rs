@@ -27,29 +27,36 @@
 //! Additionally, a function signature describing where `Resource` args are located
 //! is recorded in a WASM custom section.
 //!
-//! To handle `usize` (~`i32` in WASM) <-> `externref` conversions, `Resource` methods
-//! reference imports from a surrogate module:
+//! To handle `usize` (~`i32` in WASM) <-> `externref` conversions, managing resources is performed
+//! using 3 function imports from a surrogate module:
 //!
-//! - [`Resource::new()`] ("real" signature `fn(externref) -> usize`) stores a reference
-//!   into a table and returns the table index. The index is what is actually stored within
-//!   the `Resource`, meaning that `Resource`s can be easily placed on heap.
-//! - [`Resource::as_raw()`] ("real" signature `fn(usize) -> externref`) gets a reference
-//!   given the table index.
+//! - Creating a `Resource` ("real" signature `fn(externref) -> usize`) stores a reference
+//!   into an `externref` table and returns the table index. The index is what is actually
+//!   stored within the `Resource`, meaning that `Resource`s can be easily placed on heap.
+//! - Getting a reference from a `Resource` ("real" signature `fn(usize) -> externref`)
+//!   is an indexing operation for the `externref` table.
 //! - [`Resource::drop()`] ("real" signature `fn(usize)`) removes the reference from the table.
 //!
-//! Since `externref` is not presentable in Rust, `externref`s in `new()` / `as_raw()`
-//! are replaced with `usize`s. They are patched back by the post-processor:
+//! Since `externref` is not presentable in Rust, a surrogate newtype [`ExternRef`] is used instead.
+//! Real `externref`s are patched back by the post-processor:
 //!
-//! - Imports referenced by `new()` / `as_raw()` / `drop()` are replaced with local WASM functions.
-//!   `as_raw()` and `drop()` functions are trivial; `new()` is less so (we don't want to
-//!   excessively grow the `externref`s table, thus we search for null refs among its existing
-//!   elements first, and only then grow the table).
+//! - Imports from a surrogate module referenced by `Resource` methods are replaced
+//!   with local WASM functions. Functions for getting an `externref` from the table
+//!   and dropping an `externref` are more or less trivial. Storing an `externref` is less so;
+//!   we don't want to excessively grow the `externref`s table, thus we search for null refs
+//!   among its existing elements first, and only grow the table if all existing elements are
+//!   occupied.
 //! - Patching changes function types, and as a result types of some locals.
 //!   This is OK because the post-processor also changes the signatures of affected
 //!   imported / exported functions. The success relies on the fact that
-//!   it only makes sense to call `new()` immediately after receiving the reference from host,
-//!   and `as_raw()` immediately before passing the reference to host. `drop()` can be called
-//!   anywhere, but it does not have its type changed.
+//!   a reference is only stored *immediately* after receiving it from the host;
+//!   likewise, a reference is only obtained *immediately* before passing it to the host.
+//!   `Resource`s can be dropped anywhere, but the corresponding `externref` removal function
+//!   does not need its type changed.
+//!
+//! [reference type]: https://webassembly.github.io/spec/core/syntax/types.html#reference-types
+//! [`wasm-bindgen`]: https://crates.io/crates/wasm-bindgen
+//! [`externref-processor`]: https://docs.rs/externref-processor
 //!
 //! # Examples
 //!
@@ -70,6 +77,12 @@
 //!         message_ptr: *const u8,
 //!         message_len: usize,
 //!     ) -> Resource<Bytes>;
+//!
+//!     // `Option`s are used to deal with null references. This function will have
+//!     // `(externref) -> i32` signature.
+//!     fn message_len(bytes: Option<&Resource<Bytes>>) -> usize;
+//!     // This one has `() -> externref` signature.
+//!     fn last_sender() -> Option<Resource<Sender>>;
 //! }
 //!
 //! // This export will have signature `(externref)` on host.
@@ -86,10 +99,6 @@
 //!     // All 4 resources are dropped when exiting the function.
 //! }
 //! ```
-//!
-//! [reference type]: https://webassembly.github.io/spec/core/syntax/types.html#reference-types
-//! [`wasm-bindgen`]: https://crates.io/crates/wasm-bindgen
-//! [`externref-processor`]: https://docs.rs/externref-processor
 
 // Linter settings.
 #![warn(missing_debug_implementations, missing_docs, bare_trait_objects)]
@@ -102,13 +111,20 @@
 
 use core::marker::PhantomData;
 
-#[doc(hidden)]
-pub mod signature;
+mod error;
+mod signature;
 
+pub use crate::{
+    error::{ReadError, ReadErrorKind},
+    signature::{BitSlice, BitSliceBuilder, Function, FunctionKind},
+};
 #[cfg(feature = "macro")]
 pub use externref_macro::externref;
 
 /// `externref` surrogate.
+///
+/// The post-processing logic replaces variables of this type with real `externref`s.
+#[doc(hidden)] // should only be used by macro-generated code
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct ExternRef(usize);
@@ -132,7 +148,7 @@ impl<T> Resource<T> {
     /// This method must be called with an `externref` obtained from the host (as a return
     /// type for an imported function or an argument for an exported function); it is not
     /// a "real" `usize`. The proper use is ensured by the [`externref`] macro.
-    /// Use this method manually only if you know what you are doing.
+    #[doc(hidden)] // should only be used by macro-generated code
     #[inline(always)]
     pub unsafe fn new(id: ExternRef) -> Option<Self> {
         #[cfg(target_arch = "wasm32")]
@@ -166,7 +182,7 @@ impl<T> Resource<T> {
     /// The returned value of this method must be passed as an `externref` to the host
     /// (as a return type of an exported function or an argument of the imported function);
     /// it is not a "real" `usize`. The proper use is ensured by the [`externref`] macro.
-    /// Use this method manually only if you know what you are doing.
+    #[doc(hidden)] // should only be used by macro-generated code
     #[inline(always)]
     pub unsafe fn raw(this: Option<&Self>) -> ExternRef {
         #[cfg(target_arch = "wasm32")]
@@ -185,10 +201,7 @@ impl<T> Resource<T> {
     }
 
     /// Obtains an `externref` from this resource and drops the resource.
-    ///
-    /// # Safety
-    ///
-    /// See [`Self::raw()`] for safety considerations.
+    #[doc(hidden)] // should only be used by macro-generated code
     #[inline(always)]
     #[allow(clippy::needless_pass_by_value)]
     pub unsafe fn take_raw(this: Option<Self>) -> ExternRef {

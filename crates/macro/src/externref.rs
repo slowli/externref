@@ -220,14 +220,14 @@ impl Function {
     fn declare(&self, module_name: Option<&str>) -> impl ToTokens {
         let name = &self.name;
         let kind = if let Some(module_name) = module_name {
-            quote!(externref::signature::FunctionKind::Import(#module_name))
+            quote!(externref::FunctionKind::Import(#module_name))
         } else {
-            quote!(externref::signature::FunctionKind::Export)
+            quote!(externref::FunctionKind::Export)
         };
         let externrefs = self.create_externrefs();
 
         quote! {
-            externref::declare_function!(externref::signature::Function {
+            externref::declare_function!(externref::Function {
                 kind: #kind,
                 name: #name,
                 externrefs: #externrefs,
@@ -348,7 +348,7 @@ impl Function {
         let set_bits = set_bits.map(|idx| quote!(.with_set_bit(#idx)));
 
         quote! {
-            externref::signature::BitSlice::builder::<#bytes>(#args_and_return_type_count)
+            externref::BitSlice::builder::<#bytes>(#args_and_return_type_count)
                 #(#set_bits)*
                 .build()
         }
@@ -513,10 +513,10 @@ mod tests {
         let declaration = parsed.declare(None);
         let declaration: syn::Item = syn::parse_quote!(#declaration);
         let expected: syn::Item = syn::parse_quote! {
-            externref::declare_function!(externref::signature::Function {
-                kind: externref::signature::FunctionKind::Export,
+            externref::declare_function!(externref::Function {
+                kind: externref::FunctionKind::Export,
                 name: "test_export",
-                externrefs: externref::signature::BitSlice::builder::<1usize>(3usize)
+                externrefs: externref::BitSlice::builder::<1usize>(3usize)
                     .with_set_bit(0usize)
                     .with_set_bit(1usize)
                     .build(),

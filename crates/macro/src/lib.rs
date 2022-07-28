@@ -26,9 +26,18 @@ use crate::externref::{for_export, for_foreign_module};
 
 /// Prepares imported functions or an exported function with `Resource` args and/or return type.
 ///
+/// # Inputs
+///
 /// This attribute must be placed on an `extern "C" { ... }` block or an `extern "C" fn`.
 /// If placed on block, all enclosed functions with `Resource` args / return type will be
 /// wrapped.
+///
+/// # Processing
+///
+/// The following arg / return types are recognized as resources:
+///
+/// - `Resource<_>`, `&Resource<_>`, `&mut Resource<_>`
+/// - `Option<_>` of any of the above three variations
 #[proc_macro_attribute]
 pub fn externref(_attr: TokenStream, input: TokenStream) -> TokenStream {
     const MSG: &str = "Unsupported item; only `extern \"C\" {}` modules and `extern \"C\" fn ...` \

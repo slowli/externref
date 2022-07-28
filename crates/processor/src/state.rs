@@ -11,7 +11,7 @@ use crate::{
     functions::{ExternrefImports, PatchedFunctions},
     Error, Location, Processor,
 };
-use externref::signature::{Function, FunctionKind};
+use externref::{Function, FunctionKind};
 
 #[derive(Debug)]
 pub(crate) struct ProcessingState {
@@ -267,7 +267,7 @@ fn patch_type_inner(
     let (params, results) = types.params_results(ty);
     if params.len() + results.len() != function.externrefs.bit_len() {
         return Err(Error::UnexpectedArity {
-            module: function.kind.module().map(str::to_owned),
+            module: fn_module(&function.kind).map(str::to_owned),
             name: function.name.to_owned(),
             expected_arity: function.externrefs.bit_len(),
             real_arity: params.len() + results.len(),
@@ -285,7 +285,7 @@ fn patch_type_inner(
 
         if *placement != ValType::I32 {
             return Err(Error::UnexpectedType {
-                module: function.kind.module().map(str::to_owned),
+                module: fn_module(&function.kind).map(str::to_owned),
                 name: function.name.to_owned(),
                 location: if idx < params.len() {
                     Location::Arg(idx)
@@ -298,4 +298,11 @@ fn patch_type_inner(
         *placement = ValType::Externref;
     }
     Ok((params, results))
+}
+
+fn fn_module<'a>(fn_kind: &FunctionKind<'a>) -> Option<&'a str> {
+    match fn_kind {
+        FunctionKind::Export => None,
+        FunctionKind::Import(module) => Some(*module),
+    }
 }

@@ -7,7 +7,7 @@
 
 use walrus::{passes::gc, Module};
 
-use externref::signature::Function;
+use externref::Function;
 
 mod error;
 mod functions;

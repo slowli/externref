@@ -1,16 +1,18 @@
 //! Function signatures recorded into a custom section of WASM modules.
 
-use std::{
-    error, fmt,
-    str::{self, Utf8Error},
-};
+use std::str;
 
+use crate::error::{ReadError, ReadErrorKind};
+
+/// Builder for [`BitSlice`]s that can be used in const contexts.
+#[doc(hidden)] // not public yet
 #[derive(Debug)]
 pub struct BitSliceBuilder<const BYTES: usize> {
     bytes: [u8; BYTES],
     bit_len: usize,
 }
 
+#[doc(hidden)] // not public yet
 impl<const BYTES: usize> BitSliceBuilder<BYTES> {
     #[must_use]
     pub const fn with_set_bit(mut self, bit_idx: usize) -> Self {
@@ -27,6 +29,7 @@ impl<const BYTES: usize> BitSliceBuilder<BYTES> {
     }
 }
 
+/// Slice of bits.
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct BitSlice<'a> {
@@ -35,6 +38,7 @@ pub struct BitSlice<'a> {
 }
 
 impl BitSlice<'static> {
+    #[doc(hidden)]
     pub const fn builder<const BYTES: usize>(bit_len: usize) -> BitSliceBuilder<BYTES> {
         assert!(BYTES > 0);
         assert!(bit_len > (BYTES - 1) * 8 && bit_len <= BYTES * 8);
@@ -46,11 +50,12 @@ impl BitSlice<'static> {
 }
 
 impl<'a> BitSlice<'a> {
+    /// Returns the number of bits in this slice.
     pub fn bit_len(&self) -> usize {
         self.bit_len
     }
 
-    pub fn is_set(&self, idx: usize) -> bool {
+    fn is_set(&self, idx: usize) -> bool {
         if idx > self.bit_len {
             return false;
         }
@@ -58,6 +63,7 @@ impl<'a> BitSlice<'a> {
         self.bytes[idx / 8] & mask > 0
     }
 
+    /// Iterates over the indexes of set bits in this slice.
     pub fn set_indices(&self) -> impl Iterator<Item = usize> + '_ {
         (0..self.bit_len).filter(|&idx| self.is_set(idx))
     }
@@ -66,10 +72,7 @@ impl<'a> BitSlice<'a> {
         let bit_len = read_u32(buffer, || format!("length for {}", context))? as usize;
         let byte_len = (bit_len + 7) / 8;
         if buffer.len() < byte_len {
-            Err(ReadError {
-                kind: ReadErrorKind::UnexpectedEof,
-                context: context.to_owned(),
-            })
+            Err(ReadErrorKind::UnexpectedEof.with_context(context))
         } else {
             let bytes = &buffer[..byte_len];
             *buffer = &buffer[byte_len..];
@@ -89,48 +92,9 @@ macro_rules! write_u32 {
     }};
 }
 
-#[derive(Debug)]
-enum ReadErrorKind {
-    UnexpectedEof,
-    Utf8(Utf8Error),
-}
-
-impl fmt::Display for ReadErrorKind {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnexpectedEof => formatter.write_str("reached end of input"),
-            Self::Utf8(err) => write!(formatter, "{}", err),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct ReadError {
-    kind: ReadErrorKind,
-    context: String,
-}
-
-impl fmt::Display for ReadError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "failed reading {}: {}", self.context, self.kind)
-    }
-}
-
-impl error::Error for ReadError {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        match &self.kind {
-            ReadErrorKind::Utf8(err) => Some(err),
-            ReadErrorKind::UnexpectedEof => None,
-        }
-    }
-}
-
 fn read_u32(buffer: &mut &[u8], context: impl FnOnce() -> String) -> Result<u32, ReadError> {
     if buffer.len() < 4 {
-        Err(ReadError {
-            kind: ReadErrorKind::UnexpectedEof,
-            context: context(),
-        })
+        Err(ReadErrorKind::UnexpectedEof.with_context(context()))
     } else {
         let value = u32::from_le_bytes(buffer[..4].try_into().unwrap());
         *buffer = &buffer[4..];
@@ -141,35 +105,26 @@ fn read_u32(buffer: &mut &[u8], context: impl FnOnce() -> String) -> Result<u32,
 fn read_str<'a>(buffer: &mut &'a [u8], context: &str) -> Result<&'a str, ReadError> {
     let len = read_u32(buffer, || format!("length for {}", context))? as usize;
     if buffer.len() < len {
-        Err(ReadError {
-            kind: ReadErrorKind::UnexpectedEof,
-            context: context.to_owned(),
-        })
+        Err(ReadErrorKind::UnexpectedEof.with_context(context))
     } else {
-        let string = str::from_utf8(&buffer[..len]).map_err(|err| ReadError {
-            kind: ReadErrorKind::Utf8(err),
-            context: context.to_owned(),
-        })?;
+        let string = str::from_utf8(&buffer[..len])
+            .map_err(|err| ReadErrorKind::Utf8(err).with_context(context))?;
         *buffer = &buffer[len..];
         Ok(string)
     }
 }
 
+/// Kind of a function with [`Resource`] args or return type.
 #[derive(Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 pub enum FunctionKind<'a> {
+    /// Function exported from a WASM module.
     Export,
+    /// Function imported to a WASM module from the module with the enclosed name.
     Import(&'a str),
 }
 
 impl<'a> FunctionKind<'a> {
-    pub fn module(&self) -> Option<&'a str> {
-        match self {
-            Self::Export => None,
-            Self::Import(module) => Some(*module),
-        }
-    }
-
     const fn len_in_custom_section(&self) -> usize {
         match self {
             Self::Export => 4,
@@ -211,20 +166,31 @@ impl<'a> FunctionKind<'a> {
     }
 }
 
+/// Information about a function with [`Resource`] args or return type.
+///
+/// This information is written to a custom section of a WASM module and is then used
+/// during module [post-processing].
+///
+/// [post-processing]: https://docs.rs/externref-processor
 #[derive(Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct Function<'a> {
+    /// Kind of this function.
     pub kind: FunctionKind<'a>,
+    /// Name of this function.
     pub name: &'a str,
+    /// Bit slice marking [`Resource`](crate::Resource) args / return type.
     pub externrefs: BitSlice<'a>,
 }
 
 impl<'a> Function<'a> {
     /// Computes length of a custom section for this function signature.
+    #[doc(hidden)]
     pub const fn custom_section_len(&self) -> usize {
         self.kind.len_in_custom_section() + 4 + self.name.len() + 4 + self.externrefs.bytes.len()
     }
 
+    #[doc(hidden)]
     #[allow(clippy::cast_possible_truncation)] // `TryFrom` cannot be used in const fns
     pub const fn custom_section<const N: usize>(&self) -> [u8; N] {
         debug_assert!(N == self.custom_section_len());
@@ -251,6 +217,11 @@ impl<'a> Function<'a> {
         buffer
     }
 
+    /// Reads function information from a WASM custom section.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the custom section is malformed.
     pub fn read_from_section(buffer: &mut &'a [u8]) -> Result<Self, ReadError> {
         let kind = FunctionKind::read_from_section(buffer)?;
         Ok(Self {
@@ -266,7 +237,7 @@ impl<'a> Function<'a> {
 macro_rules! declare_function {
     ($signature:expr) => {
         const _: () = {
-            const FUNCTION: $crate::signature::Function = $signature;
+            const FUNCTION: $crate::Function = $signature;
 
             #[cfg_attr(target_arch = "wasm32", link_section = "__externrefs")]
             static DATA_SECTION: [u8; FUNCTION.custom_section_len()] = FUNCTION.custom_section();
