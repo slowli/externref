@@ -264,7 +264,7 @@ impl PatchedFunctions {
         builder.finish(vec![idx], &mut module.funcs)
     }
 
-    pub fn replace_calls(&self, module: &mut Module) {
+    pub fn replace_calls(&self, module: &mut Module) -> usize {
         #[cfg(feature = "processor-log")]
         log::debug!(target: "externref", "Replacing calls to externref imports...");
 
@@ -274,12 +274,7 @@ impl PatchedFunctions {
                 ir::dfs_pre_order_mut(&mut visitor, local_fn, local_fn.entry_block());
             }
         }
-        #[cfg(feature = "processor-log")]
-        log::info!(
-            target: "externref",
-            "Replaced {} calls to externref imports",
-            visitor.replaced_count
-        );
+        visitor.replaced_count
     }
 }
 
@@ -305,5 +300,55 @@ impl ir::VisitorMut for ReplaceFunctions<'_> {
             *function = *mapped_id;
             self.replaced_count += 1;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn taking_externref_imports() {
+        const MODULE_BYTES: &[u8] = br#"
+            (module
+                (import "externref" "insert" (func (param i32) (result i32)))
+                (import "externref" "get" (func (param i32) (result i32)))
+                (import "test" "function" (func (param f32)))
+            )
+        "#;
+
+        let module = wat::parse_bytes(MODULE_BYTES).unwrap();
+        let mut module = Module::from_buffer(&module).unwrap();
+
+        let imports = ExternrefImports::new(&mut module.imports).unwrap();
+        assert!(imports.insert.is_some());
+        assert!(imports.get.is_some());
+        assert!(imports.drop.is_none());
+        assert_eq!(module.imports.iter().count(), 1);
+    }
+
+    #[test]
+    fn replacing_function_calls() {
+        const MODULE_BYTES: &[u8] = br#"
+            (module
+                (import "externref" "insert" (func $insert_ref (param i32) (result i32)))
+                (import "externref" "get" (func $get_ref (param i32) (result i32)))
+
+                (func (export "test") (param $ref i32)
+                    (drop (call $get_ref
+                        (call $insert_ref (local.get $ref))
+                    ))
+                )
+            )
+        "#;
+
+        let module = wat::parse_bytes(MODULE_BYTES).unwrap();
+        let mut module = Module::from_buffer(&module).unwrap();
+        let imports = ExternrefImports::new(&mut module.imports).unwrap();
+
+        let fns = PatchedFunctions::new(&mut module, &imports, &Processor::default());
+        assert_eq!(fns.fn_mapping.len(), 2);
+        let replaced_calls = fns.replace_calls(&mut module);
+        assert_eq!(replaced_calls, 2); // 1 insert + 1 get
     }
 }

@@ -25,6 +25,17 @@ impl ProcessingState {
         Ok(Self { patched_fns })
     }
 
+    #[cfg(feature = "processor-log")]
+    pub fn replace_functions(&self, module: &mut Module) {
+        let replaced_count = self.patched_fns.replace_calls(module);
+        log::info!(
+            target: "externref",
+            "Replaced {} calls to externref imports",
+            replaced_count
+        );
+    }
+
+    #[cfg(not(feature = "processor-log"))]
     pub fn replace_functions(&self, module: &mut Module) {
         self.patched_fns.replace_calls(module);
     }

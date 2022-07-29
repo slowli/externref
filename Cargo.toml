@@ -13,6 +13,7 @@ log = { version = "0.4.17", optional = true }
 [dev-dependencies]
 doc-comment = "0.3.3"
 version-sync = "0.9.4"
+wat = "1.0.46"
 
 [features]
 default = ["macro"]
@@ -22,6 +23,11 @@ macro = ["externref-macro"]
 processor = ["anyhow", "walrus"]
 # Enables logging during module processing
 processor-log = ["processor", "log"]
+
+[[test]]
+name = "processor"
+path = "tests/processor.rs"
+required-features = ["processor"]
 
 # Profile for WASM modules generated in E2E tests
 [profile.wasm]
