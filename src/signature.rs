@@ -5,7 +5,7 @@ use std::str;
 use crate::error::{ReadError, ReadErrorKind};
 
 /// Builder for [`BitSlice`]s that can be used in const contexts.
-#[doc(hidden)] // not public yet
+#[doc(hidden)] // used by macro; not public (yet?)
 #[derive(Debug)]
 pub struct BitSliceBuilder<const BYTES: usize> {
     bytes: [u8; BYTES],
@@ -29,7 +29,10 @@ impl<const BYTES: usize> BitSliceBuilder<BYTES> {
     }
 }
 
-/// Slice of bits.
+/// Slice of bits. This type is used to mark [`Resource`](crate::Resource) args
+/// in imported / exported functions.
+// Why invent a new type? Turns out that existing implementations (e.g., `bv` and `bitvec`)
+// cannot be used in const contexts.
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct BitSlice<'a> {
@@ -66,6 +69,12 @@ impl<'a> BitSlice<'a> {
     /// Iterates over the indexes of set bits in this slice.
     pub fn set_indices(&self) -> impl Iterator<Item = usize> + '_ {
         (0..self.bit_len).filter(|&idx| self.is_set(idx))
+    }
+
+    /// Returns the number of set bits in this slice.
+    pub fn count_ones(&self) -> usize {
+        let ones: u32 = self.bytes.iter().copied().map(u8::count_ones).sum();
+        ones as usize
     }
 
     fn read_from_section(buffer: &mut &'a [u8], context: &str) -> Result<Self, ReadError> {
@@ -114,7 +123,7 @@ fn read_str<'a>(buffer: &mut &'a [u8], context: &str) -> Result<&'a str, ReadErr
     }
 }
 
-/// Kind of a function with [`Resource`] args or return type.
+/// Kind of a function with [`Resource`](crate::Resource) args or return type.
 #[derive(Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 pub enum FunctionKind<'a> {
@@ -166,7 +175,7 @@ impl<'a> FunctionKind<'a> {
     }
 }
 
-/// Information about a function with [`Resource`] args or return type.
+/// Information about a function with [`Resource`](crate::Resource) args or return type.
 ///
 /// This information is written to a custom section of a WASM module and is then used
 /// during module [post-processing].
@@ -184,6 +193,11 @@ pub struct Function<'a> {
 }
 
 impl<'a> Function<'a> {
+    /// Name of a custom section in WASM modules where `Function` declarations are stored.
+    /// `Function`s can be read from this section using [`Self::read_from_section()`].
+    // **NB.** Keep synced with the `declare_function!()` macro below.
+    pub const CUSTOM_SECTION_NAME: &'static str = "__externrefs";
+
     /// Computes length of a custom section for this function signature.
     #[doc(hidden)]
     pub const fn custom_section_len(&self) -> usize {
@@ -217,11 +231,18 @@ impl<'a> Function<'a> {
         buffer
     }
 
-    /// Reads function information from a WASM custom section.
+    /// Reads function information from a WASM custom section. After reading, the `buffer`
+    /// is advanced to trim the bytes consumed by the parser.
+    ///
+    /// This crate does not provide tools to read custom sections from a WASM module;
+    /// use a library like [`walrus`] or [`wasmparser`] for this purpose.
     ///
     /// # Errors
     ///
     /// Returns an error if the custom section is malformed.
+    ///
+    /// [`walrus`]: https://docs.rs/walrus/
+    /// [`wasmparser`]: https://docs.rs/wasmparser/
     pub fn read_from_section(buffer: &mut &'a [u8]) -> Result<Self, ReadError> {
         let kind = FunctionKind::read_from_section(buffer)?;
         Ok(Self {

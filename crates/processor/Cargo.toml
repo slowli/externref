@@ -7,4 +7,10 @@ edition = "2021"
 anyhow = "1.0.58"
 walrus = "0.19.0"
 
+# Enables logging during module processing
+log = { version = "0.4.17", optional = true }
+
 externref = { version = "0.1.0", path = "../..", default-features = false }
+
+[features]
+default = []

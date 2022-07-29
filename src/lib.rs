@@ -37,14 +37,14 @@
 //!   is an indexing operation for the `externref` table.
 //! - [`Resource::drop()`] ("real" signature `fn(usize)`) removes the reference from the table.
 //!
-//! Since `externref` is not presentable in Rust, a surrogate newtype [`ExternRef`] is used instead.
-//! Real `externref`s are patched back by the post-processor:
+//! Real `externref`s are patched back to the imported / exported functions
+//! by the WASM module post-processor:
 //!
 //! - Imports from a surrogate module referenced by `Resource` methods are replaced
 //!   with local WASM functions. Functions for getting an `externref` from the table
 //!   and dropping an `externref` are more or less trivial. Storing an `externref` is less so;
 //!   we don't want to excessively grow the `externref`s table, thus we search for null refs
-//!   among its existing elements first, and only grow the table if all existing elements are
+//!   among its existing elements first, and only grow the table if all existing table elements are
 //!   occupied.
 //! - Patching changes function types, and as a result types of some locals.
 //!   This is OK because the post-processor also changes the signatures of affected

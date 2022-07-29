@@ -22,9 +22,9 @@ impl fmt::Display for Location {
     }
 }
 
-/// Errors that can occur when [`process()`]ing a WASM module.
+/// Errors that can occur when [processing] a WASM module.
 ///
-/// [`process()`]: crate::process()
+/// [processing]: crate::Processor::process()
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Error {

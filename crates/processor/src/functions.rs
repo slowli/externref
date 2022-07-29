@@ -57,14 +57,32 @@ impl PatchedFunctions {
 
         let mut fn_mapping = HashMap::with_capacity(3);
         if let Some(fn_id) = imports.insert {
+            #[cfg(feature = "log")]
+            log::debug!(
+                target: "externref",
+                "Need to replace `externref::insert` import (storing an externref in table)"
+            );
+
             module.funcs.delete(fn_id);
             fn_mapping.insert(fn_id, Self::patch_insert_fn(module, table_id));
         }
         if let Some(fn_id) = imports.get {
+            #[cfg(feature = "log")]
+            log::debug!(
+                target: "externref",
+                "Need to replace `externref::get` import (getting an externref from table)"
+            );
+
             module.funcs.delete(fn_id);
             fn_mapping.insert(fn_id, Self::patch_get_fn(module, table_id));
         }
         if let Some(fn_id) = imports.drop {
+            #[cfg(feature = "log")]
+            log::debug!(
+                target: "externref",
+                "Need to replace `externref::drop` import (dropping an externref from table)"
+            );
+
             module.funcs.delete(fn_id);
             let drop_fn_id = processor.drop_fn_name.map(|(module_name, name)| {
                 let ty = module.types.add(&[ValType::Externref], &[]);
@@ -247,12 +265,21 @@ impl PatchedFunctions {
     }
 
     pub fn replace_calls(&self, module: &mut Module) {
+        #[cfg(feature = "log")]
+        log::debug!(target: "externref", "Replacing calls to externref imports...");
+
         let mut visitor = ReplaceFunctions::new(&self.fn_mapping);
         for function in module.funcs.iter_mut() {
             if let WasmFunctionKind::Local(local_fn) = &mut function.kind {
                 ir::dfs_pre_order_mut(&mut visitor, local_fn, local_fn.entry_block());
             }
         }
+        #[cfg(feature = "log")]
+        log::info!(
+            target: "externref",
+            "Replaced {} calls to externref imports",
+            visitor.replaced_count
+        );
     }
 }
 
@@ -260,11 +287,15 @@ impl PatchedFunctions {
 #[derive(Debug)]
 struct ReplaceFunctions<'a> {
     fn_mapping: &'a HashMap<FunctionId, FunctionId>,
+    replaced_count: usize,
 }
 
 impl<'a> ReplaceFunctions<'a> {
     fn new(fn_mapping: &'a HashMap<FunctionId, FunctionId>) -> Self {
-        Self { fn_mapping }
+        Self {
+            fn_mapping,
+            replaced_count: 0,
+        }
     }
 }
 
@@ -272,6 +303,7 @@ impl ir::VisitorMut for ReplaceFunctions<'_> {
     fn visit_function_id_mut(&mut self, function: &mut FunctionId) {
         if let Some(mapped_id) = self.fn_mapping.get(function) {
             *function = *mapped_id;
+            self.replaced_count += 1;
         }
     }
 }

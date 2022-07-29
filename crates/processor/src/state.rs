@@ -45,6 +45,13 @@ impl ProcessingState {
             }
 
             FunctionKind::Import(module_name) => {
+                #[cfg(feature = "log")]
+                log::info!(
+                    target: "externref",
+                    "Patching imported function `{}` from module `{}`",
+                    function.name, module_name
+                );
+
                 let import_id =
                     module
                         .imports
@@ -74,6 +81,9 @@ impl ProcessingState {
         fn_id: FunctionId,
         function: &Function<'_>,
     ) -> Result<(), Error> {
+        #[cfg(feature = "log")]
+        log::info!(target: "externref", "Patching exported function `{}`", function.name);
+
         let local_fn = module.funcs.get_mut(fn_id).kind.unwrap_local_mut();
         let (params, results) = patch_type_inner(&module.types, function, local_fn.ty())?;
 
@@ -274,30 +284,37 @@ fn patch_type_inner(
         });
     }
 
-    let mut params = params.to_vec();
-    let mut results = results.to_vec();
+    let mut new_params = params.to_vec();
+    let mut new_results = results.to_vec();
     for idx in function.externrefs.set_indices() {
-        let placement = if idx < params.len() {
-            &mut params[idx]
+        let placement = if idx < new_params.len() {
+            &mut new_params[idx]
         } else {
-            &mut results[idx - params.len()]
+            &mut new_results[idx - new_params.len()]
         };
 
         if *placement != ValType::I32 {
             return Err(Error::UnexpectedType {
                 module: fn_module(&function.kind).map(str::to_owned),
                 name: function.name.to_owned(),
-                location: if idx < params.len() {
+                location: if idx < new_params.len() {
                     Location::Arg(idx)
                 } else {
-                    Location::ReturnType(idx - params.len())
+                    Location::ReturnType(idx - new_params.len())
                 },
-                real_type: params[idx],
+                real_type: new_params[idx],
             });
         }
         *placement = ValType::Externref;
     }
-    Ok((params, results))
+
+    #[cfg(feature = "log")]
+    log::debug!(
+        target: "externref",
+        "Replacing signature {:?} -> {:?} with {:?} -> {:?}",
+        params, results, new_params, new_results
+    );
+    Ok((new_params, new_results))
 }
 
 fn fn_module<'a>(fn_kind: &FunctionKind<'a>) -> Option<&'a str> {
