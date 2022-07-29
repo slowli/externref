@@ -1,0 +1,157 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  msrv: 1.59.0
+  nightly: nightly-2022-05-21
+
+jobs:
+  build-msrv:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Cache cargo build
+        uses: actions/cache@v3
+        with:
+          path: target
+          key: ${{ runner.os }}-msrv-cargo-build-target
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.msrv }}
+          override: true
+          target: wasm32-unknown-unknown
+      - name: Install wasm-opt
+        run: |
+          wget -q -O binaryen.tar.gz https://github.com/WebAssembly/binaryen/releases/download/version_108/binaryen-version_108-x86_64-linux.tar.gz && \
+          tar xf binaryen.tar.gz && \
+          sudo install binaryen-version_108/bin/wasm-opt /usr/local/bin
+
+      # Build the E2E crate first to speed up its testing.
+      - name: Build E2E test crate
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: -p externref-test --lib --target wasm32-unknown-unknown --profile wasm
+
+      - name: Run tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --workspace --all-features --all-targets
+      - name: Run doc tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --workspace --all-features --doc
+
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Cache cargo build
+        uses: actions/cache@v3
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-target
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          target: wasm32-unknown-unknown
+          components: rustfmt, clippy
+      - name: Install wasm-opt
+        run: |
+          wget -q -O binaryen.tar.gz https://github.com/WebAssembly/binaryen/releases/download/version_108/binaryen-version_108-x86_64-linux.tar.gz && \
+          tar xf binaryen.tar.gz && \
+          sudo install binaryen-version_108/bin/wasm-opt /usr/local/bin
+
+      - name: Format
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+      - name: Clippy
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: "Clippy: all features"
+          args: --workspace --all-features --all-targets -- -D warnings
+      - name: Clippy (no features)
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: "Clippy: no features"
+          args: -p externref --no-default-features --lib -- -D warnings
+      - name: Clippy (processor)
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: "Clippy: features=processor"
+          args: -p externref --no-default-features --features=processor --lib -- -D warnings
+
+      # Build the E2E crate first to speed up its testing.
+      - name: Build E2E test crate
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: -p externref-test --lib --target wasm32-unknown-unknown --profile wasm
+
+      - name: Run tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --workspace --all-features --all-targets
+      - name: Run doc tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --workspace --all-features --doc
+
+  document:
+    if: github.event_name == 'push'
+    needs:
+      - build
+      - build-msrv
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Cache cargo build
+        uses: actions/cache@v3
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-document-target
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.nightly }}
+          profile: minimal
+          override: true
+
+      - name: Build docs
+        run: |
+          cargo clean --doc && cargo rustdoc -p externref --all-features -- --cfg docsrs \
+            && cargo rustdoc -p externref-macro -- --cfg docsrs
+
+      - name: Deploy
+        uses: JamesIves/github-pages-deploy-action@releases/v3
+        with:
+          ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+          BRANCH: gh-pages
+          FOLDER: target/doc
+          SINGLE_COMMIT: true
