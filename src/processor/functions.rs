@@ -149,14 +149,14 @@ impl PatchedFunctions {
                         .table_size(table_id)
                         .i32_const(1)
                         .binop(BinaryOp::I32Sub)
-                        .local_set(free_idx) // == 1
+                        .local_set(free_idx)
                         .block(None, |loop_wrapper| {
                             Self::create_loop(loop_wrapper, table_id, free_idx);
                         });
                 },
                 |_| {},
             )
-            .local_get(free_idx) // == 0
+            .local_get(free_idx)
             .table_size(table_id)
             .binop(BinaryOp::I32Eq)
             .if_else(
