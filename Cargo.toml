@@ -3,6 +3,7 @@ name = "externref"
 version = "0.1.0"
 authors = ["Alex Ostrovski <ostrovski.alex@gmail.com>"]
 edition = "2021"
+rust-version = "1.59"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
 keywords = ["externref", "anyref", "wasm"]
