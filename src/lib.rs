@@ -3,8 +3,8 @@
 //! Reference type (aka `externref` or `anyref`) is an opaque reference made available to
 //! a WASM module by the host environment. Such references cannot be forged in the WASM code
 //! and can be associated with arbitrary host data, thus making them a good alternative to
-//! ad-hoc `usize` handles etc. References cannot be stored in WASM linear memory; they are
-//! thus confined to the stack and tables with `externref` elements.
+//! ad-hoc handles (e.g., numeric ones). References cannot be stored in WASM linear memory;
+//! they are confined to the stack and tables with `externref` elements.
 //!
 //! Rust does not support reference types natively; there is no way to produce an import / export
 //! that has `externref` as an argument or a return type. [`wasm-bindgen`] patches WASM if

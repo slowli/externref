@@ -53,7 +53,9 @@ pub(crate) struct PatchedFunctions {
 impl PatchedFunctions {
     pub fn new(module: &mut Module, imports: &ExternrefImports, processor: &Processor<'_>) -> Self {
         let table_id = module.tables.add_local(0, None, ValType::Externref);
-        module.exports.add(processor.table_name, table_id);
+        if let Some(table_name) = processor.table_name {
+            module.exports.add(table_name, table_id);
+        }
 
         let mut fn_mapping = HashMap::with_capacity(3);
         if let Some(fn_id) = imports.insert {

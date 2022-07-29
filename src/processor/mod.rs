@@ -2,15 +2,19 @@
 //!
 //! WASM modules that use the `externref` crate need to be processed in order
 //! to use `externref` function args / return types for imported or exported functions that
-//! originally used [`Resource`](crate::Resource)s. This crate encapsulates processing logic.
+//! originally used [`Resource`](crate::Resource)s. This module encapsulates processing logic.
 //!
 //! More precisely, the processor performs the following steps:
 //!
-//! - Parse the custom section with [`Function`] declarations and remove this section.
+//! - Parse the custom section with [`Function`] declarations and remove this section
+//!   from the module.
 //! - Replace imported functions from a surrogate module for handling `externref`s with
 //!   local functions.
 //! - Patch signatures and implementations of imported / exported functions so that they
 //!   use `externref`s where appropriate.
+//! - Add an initially empty, unconstrained table with `externref` elements and optionally
+//!   export it from the module. The host can use the table to inspect currently used references
+//!   (e.g., to save / restore WASM instance state).
 //!
 //! See [crate-level docs](..) for more insights on WASM module setup and processing.
 //!
@@ -47,23 +51,34 @@ use crate::Function;
 /// WASM module processor encapsulating processing options.
 #[derive(Debug)]
 pub struct Processor<'a> {
-    table_name: &'a str,
+    table_name: Option<&'a str>,
     drop_fn_name: Option<(&'a str, &'a str)>,
 }
 
 impl Default for Processor<'_> {
     fn default() -> Self {
         Self {
-            table_name: "externrefs",
+            table_name: Some("externrefs"),
             drop_fn_name: None,
         }
     }
 }
 
 impl<'a> Processor<'a> {
+    /// Sets the name of the exported `externref`s table where refs obtained from the host
+    /// are placed. If set to `None`, the table will not be exported from the module.
+    ///
+    /// By default, the table is exported as `"externrefs"`.
+    pub fn set_ref_table(&mut self, name: impl Into<Option<&'a str>>) -> &mut Self {
+        self.table_name = name.into();
+        self
+    }
+
     /// Sets a function to notify the host about dropped `externref`s. This function
     /// will be added as an import with a signature `(externref) -> ()` and will be called
     /// immediately before dropping each reference.
+    ///
+    /// By default, there is no notifier hook installed.
     pub fn set_drop_fn(&mut self, module: &'a str, name: &'a str) -> &mut Self {
         self.drop_fn_name = Some((module, name));
         self

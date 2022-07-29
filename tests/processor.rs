@@ -27,12 +27,7 @@ fn simple_module_path() -> &'static Path {
     Path::new("tests/modules/simple.wast")
 }
 
-#[test]
-fn basic_module_transform() {
-    let module = wat::parse_file(simple_module_path()).unwrap();
-    let mut module = Module::from_buffer(&module).unwrap();
-
-    // We need to add a custom section to the module before processing.
+fn add_basic_custom_section(module: &mut Module) {
     let mut section_data = Vec::with_capacity(ARENA_ALLOC_BYTES.len() + TEST_BYTES.len());
     section_data.extend_from_slice(&ARENA_ALLOC_BYTES);
     section_data.extend_from_slice(&TEST_BYTES);
@@ -40,6 +35,14 @@ fn basic_module_transform() {
         name: Function::CUSTOM_SECTION_NAME.to_owned(),
         data: section_data,
     });
+}
+
+#[test]
+fn basic_module() {
+    let module = wat::parse_file(simple_module_path()).unwrap();
+    let mut module = Module::from_buffer(&module).unwrap();
+    // We need to add a custom section to the module before processing.
+    add_basic_custom_section(&mut module);
 
     Processor::default().process(&mut module).unwrap();
 
@@ -78,5 +81,39 @@ fn basic_module_transform() {
 
     // Check that the module is well-formed by converting it to bytes and back.
     let module_bytes = module.emit_wasm();
-    wat::parse_bytes(&module_bytes).unwrap();
+    Module::from_buffer(&module_bytes).unwrap();
+}
+
+#[test]
+fn basic_module_with_no_table_export_and_drop_hook() {
+    let module = wat::parse_file(simple_module_path()).unwrap();
+    let mut module = Module::from_buffer(&module).unwrap();
+    add_basic_custom_section(&mut module);
+
+    Processor::default()
+        .set_ref_table(None)
+        .set_drop_fn("hook", "drop_ref")
+        .process(&mut module)
+        .unwrap();
+
+    // Check that the drop hook is imported.
+    assert_eq!(module.imports.iter().count(), 2, "{:?}", module.imports);
+    let import_id = module.imports.find("hook", "drop_ref").unwrap();
+    let import_id = match &module.imports.get(import_id).kind {
+        ImportKind::Function(fn_id) => *fn_id,
+        other => panic!("unexpected import type: {:?}", other),
+    };
+    let function_type = module.types.get(module.funcs.get(import_id).ty());
+    assert_eq!(function_type.params(), [ValType::Externref]);
+    assert_eq!(function_type.results(), []);
+
+    // Check that the refs table is not exported.
+    assert!(!module
+        .exports
+        .iter()
+        .any(|export| matches!(export.item, ExportItem::Table(_))));
+
+    // Check that the module is well-formed by converting it to bytes and back.
+    let module_bytes = module.emit_wasm();
+    Module::from_buffer(&module_bytes).unwrap();
 }
