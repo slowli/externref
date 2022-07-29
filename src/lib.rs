@@ -11,12 +11,13 @@
 //! `externref`s are enabled. This library strives to accomplish the same goal for generic
 //! low-level WASM ABIs (`wasm-bindgen` is specialized for browser hosts).
 //!
-//! # Workflow
+//! # Usage
 //!
-//! 1. Declare [`Resource`]s as arguments / return results for imported and/or exported functions
-//!   in a WASM module. Reference args (including mutable references) are supported as well.
+//! 1. Use [`Resource`]s as arguments / return results for imported and/or exported functions
+//!   in a WASM module in place of `externref`s . Reference args (including mutable references)
+//!   and the `Option<_>` wrapper are supported as well.
 //! 2. Add the `#[externref]` proc macro on the imported / exported functions.
-//! 3. Post-process the generated WASM module with [`externref-processor`].
+//! 3. Post-process the generated WASM module with the [`processor`](crate::processor).
 //!
 //! # How it works
 //!
@@ -56,9 +57,28 @@
 //!
 //! [reference type]: https://webassembly.github.io/spec/core/syntax/types.html#reference-types
 //! [`wasm-bindgen`]: https://crates.io/crates/wasm-bindgen
-//! [`externref-processor`]: https://docs.rs/externref-processor
+//!
+//! # Crate features
+//!
+//! ## `processor`
+//!
+//! *(Off by default)*
+//!
+//! Enables WASM module processing via the [`processor`](crate::processor) module.
+//!
+//! ## `processor-log`
+//!
+//! *(Off by default)*
+//!
+//! Enables logging key events during [processing](crate::processor) with the [`log`] facade.
+//! Logs use the `externref` target and mostly `INFO` and `DEBUG` levels.
+//!
+//! [`Resource`]: externref::Resource
+//! [`log`]: https://docs.rs/log/
 //!
 //! # Examples
+//!
+//! Using the `#[externref]` macro and `Resource`s in WASM-targeting code:
 //!
 //! ```no_run
 //! use externref::{externref, Resource};
@@ -112,6 +132,8 @@
 use core::marker::PhantomData;
 
 mod error;
+#[cfg(feature = "processor")]
+pub mod processor;
 mod signature;
 
 pub use crate::{

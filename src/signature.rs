@@ -180,7 +180,7 @@ impl<'a> FunctionKind<'a> {
 /// This information is written to a custom section of a WASM module and is then used
 /// during module [post-processing].
 ///
-/// [post-processing]: https://docs.rs/externref-processor
+/// [post-processing]: crate::processor
 #[derive(Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct Function<'a> {

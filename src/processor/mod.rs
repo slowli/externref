@@ -1,8 +1,10 @@
-//! WASM post-processor for [`externref`](::externref).
+//! WASM module processor for [`externref`](::externref).
 //!
-//! The processor must be used on WASM modules that use the `externref` crate in order
-//! to produce a module with `externref` function args / return types for functions that
-//! originally used [`Resource`]s. More precisely, the processor performs the following steps:
+//! WASM modules that use the `externref` crate need to be processed in order
+//! to use `externref` function args / return types for imported or exported functions that
+//! originally used [`Resource`]s. This crate encapsulates processing logic.
+//!
+//! More precisely, the processor performs the following steps:
 //!
 //! - Parse the custom section with [`Function`] declarations and remove this section.
 //! - Replace imported functions from a surrogate module for handling `externref`s with
@@ -10,25 +12,12 @@
 //! - Patch signatures and implementations of imported / exported functions so that they
 //!   use `externref`s where appropriate.
 //!
-//! See `externref` crate docs for more details on processing.
-//!
-//! # Crate features
-//!
-//! ## `log`
-//!
-//! *(Off by default)*
-//!
-//! Enables logging key events during processing with the [`log`] facade. Logs use
-//! the `externref` target and mostly `INFO` and `DEBUG` levels.
-//!
-//! [`Resource`]: externref::Resource
-//! [`Function`]: externref::Function
-//! [`log`]: https://docs.rs/log/
+//! See [crate-level docs](..) for more insights on WASM module setup and processing.
 //!
 //! # Examples
 //!
 //! ```
-//! use externref_processor::Processor;
+//! use externref::processor::Processor;
 //!
 //! let module: Vec<u8> = // WASM module, e.g., loaded from the file system
 //! #    b"\0asm\x01\0\0\0".to_vec();
@@ -37,7 +26,7 @@
 //!     .set_drop_fn("test", "drop_ref")
 //!     .process_bytes(&module)?;
 //! // Store or use the processed module...
-//! # Ok::<_, externref_processor::Error>(())
+//! # Ok::<_, externref::processor::Error>(())
 //! ```
 
 // Linter settings.
@@ -47,14 +36,13 @@
 
 use walrus::{passes::gc, Module};
 
-use externref::Function;
-
 mod error;
 mod functions;
 mod state;
 
-pub use crate::error::{Error, Location};
-use crate::state::ProcessingState;
+pub use self::error::{Error, Location};
+use self::state::ProcessingState;
+use crate::Function;
 
 /// WASM module processor encapsulating processing options.
 #[derive(Debug)]
@@ -92,12 +80,12 @@ impl<'a> Processor<'a> {
         let raw_section = if let Some(section) = raw_section {
             section
         } else {
-            #[cfg(feature = "log")]
+            #[cfg(feature = "processor-log")]
             log::info!(target: "externref", "Module contains no custom section; skipping");
             return Ok(());
         };
         let functions = Self::parse_section(&raw_section.data)?;
-        #[cfg(feature = "log")]
+        #[cfg(feature = "processor-log")]
         Self::log_functions(&functions);
 
         let state = ProcessingState::new(module, self)?;
@@ -119,9 +107,9 @@ impl<'a> Processor<'a> {
         Ok(functions)
     }
 
-    #[cfg(feature = "log")]
+    #[cfg(feature = "processor-log")]
     fn log_functions(functions: &[Function<'_>]) {
-        use externref::FunctionKind;
+        use crate::FunctionKind;
 
         log::info!(target: "externref", "Custom section contains {} functions", functions.len());
         for function in functions {

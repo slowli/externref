@@ -7,11 +7,11 @@ use walrus::{
 
 use std::{collections::HashMap, mem};
 
-use crate::{
+use super::{
     functions::{ExternrefImports, PatchedFunctions},
     Error, Location, Processor,
 };
-use externref::{Function, FunctionKind};
+use crate::{Function, FunctionKind};
 
 #[derive(Debug)]
 pub(crate) struct ProcessingState {
@@ -45,7 +45,7 @@ impl ProcessingState {
             }
 
             FunctionKind::Import(module_name) => {
-                #[cfg(feature = "log")]
+                #[cfg(feature = "processor-log")]
                 log::info!(
                     target: "externref",
                     "Patching imported function `{}` from module `{}`",
@@ -81,7 +81,7 @@ impl ProcessingState {
         fn_id: FunctionId,
         function: &Function<'_>,
     ) -> Result<(), Error> {
-        #[cfg(feature = "log")]
+        #[cfg(feature = "processor-log")]
         log::info!(target: "externref", "Patching exported function `{}`", function.name);
 
         let local_fn = module.funcs.get_mut(fn_id).kind.unwrap_local_mut();
@@ -308,7 +308,7 @@ fn patch_type_inner(
         *placement = ValType::Externref;
     }
 
-    #[cfg(feature = "log")]
+    #[cfg(feature = "processor-log")]
     log::debug!(
         target: "externref",
         "Replacing signature {:?} -> {:?} with {:?} -> {:?}",

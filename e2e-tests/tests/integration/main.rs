@@ -4,7 +4,7 @@ use wasmtime::{Caller, Engine, Extern, ExternRef, Linker, Module, Store, Table, 
 
 use std::collections::HashSet;
 
-use externref_processor::Processor;
+use externref::processor::Processor;
 
 mod compile;
 

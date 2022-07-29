@@ -2,12 +2,12 @@
 //!
 //! This macro wraps imported or exported functions with `Resource` args / return type
 //! doing all heavy lifting to prepare these functions for usage with `externref`s.
-//! Note that it is still necessary to post-process the module with [`externref-processor`].
+//! Note that it is necessary to post-process the module with the module processor provided
+//! by the `externref` crate.
 //!
 //! See `externref` docs for more details and examples of usage.
 //!
 //! [`externref`]: https://docs.rs/externref
-//! [`externref-processor`]: https://docs.rs/externref-processor
 
 #![recursion_limit = "128"]
 // Linter settings.

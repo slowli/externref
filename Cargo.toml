@@ -5,11 +5,21 @@ edition = "2021"
 
 [dependencies]
 externref-macro = { version = "0.1.0", path = "crates/macro", optional = true }
+# Processor dependencies
+anyhow = { version = "1.0.58", optional = true }
+walrus = { version = "0.19.0", optional = true }
+log = { version = "0.4.17", optional = true }
 
 [features]
 default = ["macro"]
+# Re-exports the `externref` macro
 macro = ["externref-macro"]
+# Enables WASM module processing logic (the `processor` module)
+processor = ["anyhow", "walrus"]
+# Enables logging during module processing
+processor-log = ["processor", "log"]
 
+# Profile for WASM modules generated in E2E tests
 [profile.wasm]
 inherits = "release"
 panic = "abort"
@@ -18,4 +28,4 @@ opt-level = "z" # Optimize for size, rather than speed
 lto = true
 
 [workspace]
-members = [".", "crates/macro", "crates/processor", "e2e-tests"]
+members = [".", "crates/macro", "e2e-tests"]

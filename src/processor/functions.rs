@@ -8,7 +8,7 @@ use walrus::{
 
 use std::collections::HashMap;
 
-use crate::{Error, Processor};
+use super::{Error, Processor};
 
 #[derive(Debug)]
 pub(crate) struct ExternrefImports {
@@ -57,7 +57,7 @@ impl PatchedFunctions {
 
         let mut fn_mapping = HashMap::with_capacity(3);
         if let Some(fn_id) = imports.insert {
-            #[cfg(feature = "log")]
+            #[cfg(feature = "processor-log")]
             log::debug!(
                 target: "externref",
                 "Need to replace `externref::insert` import (storing an externref in table)"
@@ -67,7 +67,7 @@ impl PatchedFunctions {
             fn_mapping.insert(fn_id, Self::patch_insert_fn(module, table_id));
         }
         if let Some(fn_id) = imports.get {
-            #[cfg(feature = "log")]
+            #[cfg(feature = "processor-log")]
             log::debug!(
                 target: "externref",
                 "Need to replace `externref::get` import (getting an externref from table)"
@@ -77,7 +77,7 @@ impl PatchedFunctions {
             fn_mapping.insert(fn_id, Self::patch_get_fn(module, table_id));
         }
         if let Some(fn_id) = imports.drop {
-            #[cfg(feature = "log")]
+            #[cfg(feature = "processor-log")]
             log::debug!(
                 target: "externref",
                 "Need to replace `externref::drop` import (dropping an externref from table)"
@@ -265,7 +265,7 @@ impl PatchedFunctions {
     }
 
     pub fn replace_calls(&self, module: &mut Module) {
-        #[cfg(feature = "log")]
+        #[cfg(feature = "processor-log")]
         log::debug!(target: "externref", "Replacing calls to externref imports...");
 
         let mut visitor = ReplaceFunctions::new(&self.fn_mapping);
@@ -274,7 +274,7 @@ impl PatchedFunctions {
                 ir::dfs_pre_order_mut(&mut visitor, local_fn, local_fn.entry_block());
             }
         }
-        #[cfg(feature = "log")]
+        #[cfg(feature = "processor-log")]
         log::info!(
             target: "externref",
             "Replaced {} calls to externref imports",

@@ -2,7 +2,7 @@
 
 use std::{error, fmt};
 
-use externref::ReadError;
+use crate::ReadError;
 
 /// Location of a `Resource`: a function argument or a return type.
 #[derive(Debug)]
