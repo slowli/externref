@@ -73,7 +73,6 @@
 //! Enables logging key events during [processing](crate::processor) with the [`log`] facade.
 //! Logs use the `externref` target and mostly `INFO` and `DEBUG` levels.
 //!
-//! [`Resource`]: externref::Resource
 //! [`log`]: https://docs.rs/log/
 //!
 //! # Examples
@@ -120,6 +119,9 @@
 //! }
 //! ```
 
+// Documentation settings.
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![doc(html_root_url = "https://docs.rs/externref/0.1.0")]
 // Linter settings.
 #![warn(missing_debug_implementations, missing_docs, bare_trait_objects)]
 #![warn(clippy::all, clippy::pedantic)]
@@ -133,6 +135,7 @@ use core::marker::PhantomData;
 
 mod error;
 #[cfg(feature = "processor")]
+#[cfg_attr(docsrs, doc(cfg(feature = "processor")))]
 pub mod processor;
 mod signature;
 
@@ -141,6 +144,7 @@ pub use crate::{
     signature::{BitSlice, BitSliceBuilder, Function, FunctionKind},
 };
 #[cfg(feature = "macro")]
+#[cfg_attr(docsrs, doc(cfg(feature = "macro")))]
 pub use externref_macro::externref;
 
 /// `externref` surrogate.
@@ -250,3 +254,6 @@ impl<T> Drop for Resource<T> {
         unsafe { drop_externref(self.id) };
     }
 }
+
+#[cfg(doctest)]
+doc_comment::doctest!("../README.md");

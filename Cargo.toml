@@ -10,6 +10,10 @@ anyhow = { version = "1.0.58", optional = true }
 walrus = { version = "0.19.0", optional = true }
 log = { version = "0.4.17", optional = true }
 
+[dev-dependencies]
+doc-comment = "0.3.3"
+version-sync = "0.9.4"
+
 [features]
 default = ["macro"]
 # Re-exports the `externref` macro

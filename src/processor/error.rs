@@ -24,7 +24,7 @@ impl fmt::Display for Location {
 
 /// Errors that can occur when [processing] a WASM module.
 ///
-/// [processing]: crate::Processor::process()
+/// [processing]: super::Processor::process()
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Error {

@@ -10,6 +10,8 @@
 //! [`externref`]: https://docs.rs/externref
 
 #![recursion_limit = "128"]
+// Documentation settings.
+#![doc(html_root_url = "https://docs.rs/externref-macro/0.1.0")]
 // Linter settings.
 #![warn(missing_debug_implementations, missing_docs, bare_trait_objects)]
 #![warn(clippy::all, clippy::pedantic)]

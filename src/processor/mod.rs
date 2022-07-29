@@ -1,8 +1,8 @@
-//! WASM module processor for [`externref`](::externref).
+//! WASM module processor for `externref`s.
 //!
 //! WASM modules that use the `externref` crate need to be processed in order
 //! to use `externref` function args / return types for imported or exported functions that
-//! originally used [`Resource`]s. This crate encapsulates processing logic.
+//! originally used [`Resource`](crate::Resource)s. This crate encapsulates processing logic.
 //!
 //! More precisely, the processor performs the following steps:
 //!
