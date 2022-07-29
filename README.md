@@ -1,4 +1,4 @@
-# Low-cost reference type shims for WASM modules
+# Low-Cost Reference Type Shims For WASM Modules
 
 A [reference type] (aka `externref` or `anyref`) is an opaque reference made available to
 a WASM module by the host environment. Such references cannot be forged in the WASM code
@@ -68,6 +68,15 @@ See crate docs for more examples of usage and implementation details.
 
 Experimental; it may be the case that the processor produces invalid WASM
 in some corner cases (please report this as an issue if it does).
+
+## License
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE)
+or [MIT license](LICENSE-MIT) at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in `externref` by you, as defined in the Apache-2.0 license,
+shall be dual licensed as above, without any additional terms or conditions.
 
 [reference type]: https://webassembly.github.io/spec/core/syntax/types.html#reference-types
 [`wasm-bindgen`]: https://crates.io/crates/wasm-bindgen
