@@ -34,7 +34,7 @@ impl<const BYTES: usize> BitSliceBuilder<BYTES> {
 // Why invent a new type? Turns out that existing implementations (e.g., `bv` and `bitvec`)
 // cannot be used in const contexts.
 #[derive(Debug, Clone, Copy)]
-#[cfg_attr(test, derive(PartialEq))]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct BitSlice<'a> {
     bytes: &'a [u8],
     bit_len: usize,
@@ -125,7 +125,7 @@ fn read_str<'a>(buffer: &mut &'a [u8], context: &str) -> Result<&'a str, ReadErr
 
 /// Kind of a function with [`Resource`](crate::Resource) args or return type.
 #[derive(Debug)]
-#[cfg_attr(test, derive(PartialEq))]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 pub enum FunctionKind<'a> {
     /// Function exported from a WASM module.
     Export,
@@ -182,7 +182,7 @@ impl<'a> FunctionKind<'a> {
 ///
 /// [post-processing]: crate::processor
 #[derive(Debug)]
-#[cfg_attr(test, derive(PartialEq))]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct Function<'a> {
     /// Kind of this function.
     pub kind: FunctionKind<'a>,
