@@ -63,14 +63,14 @@ impl ProcessingState {
                     function.name, module_name
                 );
 
-                let import_id =
-                    module
-                        .imports
-                        .find(module_name, function.name)
-                        .ok_or_else(|| Error::NoImport {
-                            module: module_name.to_owned(),
-                            name: function.name.to_owned(),
-                        })?;
+                let import_id = match module.imports.find(module_name, function.name) {
+                    Some(id) => id,
+                    None => {
+                        // The function is declared, but not actually used from the module.
+                        // This is fine for us.
+                        return Ok(());
+                    }
+                };
                 let fn_id = match module.imports.get(import_id).kind {
                     ImportKind::Function(fn_id) => fn_id,
                     _ => {

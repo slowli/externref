@@ -32,13 +32,6 @@ pub enum Error {
     Read(ReadError),
     /// Error parsing the WASM module.
     Wasm(anyhow::Error),
-    /// Missing imported function with the enclosed module / name.
-    NoImport {
-        /// Name of the module.
-        module: String,
-        /// Name of the function.
-        name: String,
-    },
     /// Unexpected type of an import (expected a function).
     UnexpectedImportType {
         /// Name of the module.
@@ -80,13 +73,6 @@ impl fmt::Display for Error {
             Self::Read(err) => write!(formatter, "failed reading WASM custom section: {}", err),
             Self::Wasm(err) => write!(formatter, "failed reading WASM module: {}", err),
 
-            Self::NoImport { module, name } => {
-                write!(
-                    formatter,
-                    "missing imported function `{}::{}`",
-                    module, name
-                )
-            }
             Self::UnexpectedImportType { module, name } => {
                 write!(
                     formatter,
