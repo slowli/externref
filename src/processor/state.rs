@@ -183,6 +183,41 @@ impl ProcessingState {
         Ok(())
     }
 
+    /// What we want to do here and in [`Self::transform_export()`] is to patch some
+    /// of locals that have the `i32` type, but must have the `externref` type as per
+    /// patched functions. There are two types of such locals:
+    ///
+    /// - `externref` arguments for exports, which we know by collecting function signatures
+    ///   from the custom section
+    /// - Locals assigned from calling a function that returns `externref`. We know such functions
+    ///   in advance; they are among imported functions (in which case whether a function
+    ///   returns an `externref` is determined based on the function sig from the custom section),
+    ///   plus the `exernref::get` function.
+    ///
+    /// Locals of the second type can occur in any local function; thus, we need to scan all
+    /// of them. We scan for these locals by searching tuples of `call $fn` + `local.set $r` /
+    /// `local.tee $r` instructions, where `$fn` is a function returning `externref`.
+    /// Thus, we assume that:
+    ///
+    /// - `call.indirect` is not used to produce `externref`s. This seems to be correct
+    ///   for properly produced modules.
+    /// - A local is assigned immediately after the call. This *looks* reasonable; besides
+    ///   being assigned to a local, an `externref` can only be consumed by a function
+    ///   accepting an `externref` argument. Still, this assumption is somewhat shaky.
+    ///   Further, it doesn't really work with functions returning multiple results.
+    ///
+    /// To eliminate these restrictions with 100% certainty, it would be necessary to symbolically
+    /// evaluate each local function to determine the contents of the operand stack at all times
+    /// (which is a significant part of module validation). Doesn't seem worth the effort right now.
+    ///
+    /// After all `externref` locals are found, we determine uses (via `local.get $ref`) for each
+    /// local, taking into account that a local can be reassigned. For call result locals this
+    /// means that we should introduce a new local for each call to be on the safe side.
+    /// (We could reuse locals in some cases, but this requires more work.) A single use is
+    /// encoded as a tuple (sequence ID, index of `local.get $ref` in the sequence).
+    ///
+    /// Finally, after collecting all uses, we replace locals with the new ones. For exports,
+    /// this process is combined with cloning function code.
     fn transform_local_fn(
         module: &mut Module,
         functions_returning_ref: &HashSet<FunctionId>,
