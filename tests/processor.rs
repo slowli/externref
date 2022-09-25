@@ -27,6 +27,10 @@ fn simple_module_path() -> &'static Path {
     Path::new("tests/modules/simple.wast")
 }
 
+fn no_inline_module_path() -> &'static Path {
+    Path::new("tests/modules/simple-no-inline.wast")
+}
+
 fn add_basic_custom_section(module: &mut Module) {
     let mut section_data = Vec::with_capacity(ARENA_ALLOC_BYTES.len() + TEST_BYTES.len());
     section_data.extend_from_slice(&ARENA_ALLOC_BYTES);
@@ -112,6 +116,20 @@ fn basic_module_with_no_table_export_and_drop_hook() {
         .exports
         .iter()
         .any(|export| matches!(export.item, ExportItem::Table(_))));
+
+    // Check that the module is well-formed by converting it to bytes and back.
+    let module_bytes = module.emit_wasm();
+    Module::from_buffer(&module_bytes).unwrap();
+}
+
+#[test]
+fn module_without_inlines() {
+    let module = wat::parse_file(no_inline_module_path()).unwrap();
+    let mut module = Module::from_buffer(&module).unwrap();
+    // We need to add a custom section to the module before processing.
+    add_basic_custom_section(&mut module);
+
+    Processor::default().process(&mut module).unwrap();
 
     // Check that the module is well-formed by converting it to bytes and back.
     let module_bytes = module.emit_wasm();
