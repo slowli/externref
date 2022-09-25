@@ -58,7 +58,8 @@ impl<'a> BitSlice<'a> {
         self.bit_len
     }
 
-    fn is_set(&self, idx: usize) -> bool {
+    /// Checks if a bit with the specified 0-based index is set.
+    pub fn is_set(&self, idx: usize) -> bool {
         if idx > self.bit_len {
             return false;
         }

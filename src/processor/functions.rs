@@ -48,6 +48,7 @@ impl ExternrefImports {
 #[derive(Debug)]
 pub(crate) struct PatchedFunctions {
     fn_mapping: HashMap<FunctionId, FunctionId>,
+    get_ref_id: Option<FunctionId>,
 }
 
 impl PatchedFunctions {
@@ -58,6 +59,8 @@ impl PatchedFunctions {
         }
 
         let mut fn_mapping = HashMap::with_capacity(3);
+        let mut get_ref_id = None;
+
         if let Some(fn_id) = imports.insert {
             #[cfg(feature = "processor-log")]
             log::debug!(
@@ -68,6 +71,7 @@ impl PatchedFunctions {
             module.funcs.delete(fn_id);
             fn_mapping.insert(fn_id, Self::patch_insert_fn(module, table_id));
         }
+
         if let Some(fn_id) = imports.get {
             #[cfg(feature = "processor-log")]
             log::debug!(
@@ -76,8 +80,11 @@ impl PatchedFunctions {
             );
 
             module.funcs.delete(fn_id);
-            fn_mapping.insert(fn_id, Self::patch_get_fn(module, table_id));
+            let patched_fn_id = Self::patch_get_fn(module, table_id);
+            fn_mapping.insert(fn_id, patched_fn_id);
+            get_ref_id = Some(patched_fn_id);
         }
+
         if let Some(fn_id) = imports.drop {
             #[cfg(feature = "processor-log")]
             log::debug!(
@@ -92,7 +99,11 @@ impl PatchedFunctions {
             });
             fn_mapping.insert(fn_id, Self::patch_drop_fn(module, table_id, drop_fn_id));
         }
-        Self { fn_mapping }
+
+        Self {
+            fn_mapping,
+            get_ref_id,
+        }
     }
 
     // We want to implement the following logic:
@@ -264,6 +275,10 @@ impl PatchedFunctions {
             .ref_null(ValType::Externref)
             .table_set(table_id);
         builder.finish(vec![idx], &mut module.funcs)
+    }
+
+    pub fn get_ref_id(&self) -> Option<FunctionId> {
+        self.get_ref_id
     }
 
     pub fn replace_calls(&self, module: &mut Module) -> usize {

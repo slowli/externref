@@ -105,9 +105,7 @@ impl<'a> Processor<'a> {
 
         let state = ProcessingState::new(module, self)?;
         state.replace_functions(module);
-        for function in &functions {
-            ProcessingState::process_function(function, module)?;
-        }
+        state.process_functions(&functions, module)?;
 
         gc::run(module);
         Ok(())
