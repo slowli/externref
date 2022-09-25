@@ -3,10 +3,10 @@ use quote::{quote, ToTokens};
 use syn::{
     spanned::Spanned, Attribute, FnArg, ForeignItem, GenericArgument, Ident, ItemFn,
     ItemForeignMod, Lit, LitStr, Meta, MetaList, NestedMeta, PatType, PathArguments, Signature,
-    Type, TypePath,
+    Type, TypePath, Visibility,
 };
 
-use std::collections::HashMap;
+use std::{collections::HashMap, mem};
 
 fn check_abi(abi_name: Option<&LitStr>, root_span: &impl Spanned) -> darling::Result<()> {
     let abi_name = abi_name.ok_or_else(|| {
@@ -287,7 +287,7 @@ impl Function {
         }
     }
 
-    fn wrap_import(&self, mut sig: Signature) -> (TokenStream, Ident) {
+    fn wrap_import(&self, vis: &Visibility, mut sig: Signature) -> (TokenStream, Ident) {
         sig.unsafety = Some(syn::parse_quote!(unsafe));
         let new_ident = format!("__externref_{}", sig.ident);
         let new_ident = Ident::new(&new_ident, sig.ident.span());
@@ -320,7 +320,7 @@ impl Function {
             ReturnType::Default => quote!(#delegation;),
         };
 
-        (quote!(#sig { #delegation }), new_ident)
+        (quote!(#vis #sig { #delegation }), new_ident)
     }
 
     fn create_externrefs(&self) -> impl ToTokens {
@@ -434,7 +434,8 @@ impl Imports {
                     continue;
                 }
 
-                let (wrapper, new_ident) = function.wrap_import(fn_item.sig.clone());
+                let vis = mem::replace(&mut fn_item.vis, Visibility::Inherited);
+                let (wrapper, new_ident) = function.wrap_import(&vis, fn_item.sig.clone());
                 if !has_link_name {
                     // Add `#[link_name = ".."]` since the function is renamed.
                     let name = fn_item.sig.ident.to_string();
@@ -580,7 +581,7 @@ mod tests {
         };
         let parsed = Function::from_sig(&sig, None);
 
-        let (wrapper, ident) = parsed.wrap_import(sig);
+        let (wrapper, ident) = parsed.wrap_import(&Visibility::Inherited, sig);
         assert_eq!(ident, "__externref_send_message");
 
         let wrapper: ItemFn = syn::parse_quote!(#wrapper);
