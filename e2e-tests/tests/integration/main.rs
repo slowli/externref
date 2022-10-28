@@ -1,8 +1,9 @@
 use assert_matches::assert_matches;
 use once_cell::sync::Lazy;
+use tracing_subscriber::{fmt::format::FmtSpan, FmtSubscriber};
 use wasmtime::{Caller, Engine, Extern, ExternRef, Linker, Module, Store, Table, Trap, Val};
 
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Once};
 
 use externref::processor::Processor;
 
@@ -13,6 +14,19 @@ use crate::compile::compile;
 type RefAssertion = fn(Caller<'_, Data>, &Table);
 
 static OPTIMIZED_MODULE: Lazy<Vec<u8>> = Lazy::new(|| compile(true));
+
+fn enable_tracing() {
+    static TRACING: Once = Once::new();
+
+    TRACING.call_once(|| {
+        FmtSubscriber::builder()
+            .pretty()
+            .with_span_events(FmtSpan::CLOSE)
+            .with_test_writer()
+            .with_env_filter("externref=debug")
+            .init();
+    });
+}
 
 #[derive(Debug)]
 struct HostSender {
@@ -142,6 +156,8 @@ fn create_linker(engine: &Engine) -> Linker<Data> {
 
 #[test]
 fn transform_after_optimization() {
+    enable_tracing();
+
     let module = Processor::default()
         .set_drop_fn("test", "drop_ref")
         .process_bytes(&OPTIMIZED_MODULE)
@@ -184,6 +200,8 @@ fn transform_after_optimization() {
 
 #[test]
 fn null_references() {
+    enable_tracing();
+
     let module = Processor::default()
         .process_bytes(&OPTIMIZED_MODULE)
         .unwrap();
