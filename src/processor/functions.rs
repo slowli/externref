@@ -52,6 +52,10 @@ pub(crate) struct PatchedFunctions {
 }
 
 impl PatchedFunctions {
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "debug", name = "patch_imports", skip_all)
+    )]
     pub fn new(module: &mut Module, imports: &ExternrefImports, processor: &Processor<'_>) -> Self {
         let table_id = module.tables.add_local(0, None, ValType::Externref);
         if let Some(table_name) = processor.table_name {
@@ -62,22 +66,16 @@ impl PatchedFunctions {
         let mut get_ref_id = None;
 
         if let Some(fn_id) = imports.insert {
-            #[cfg(feature = "processor-log")]
-            log::debug!(
-                target: "externref",
-                "Need to replace `externref::insert` import (storing an externref in table)"
-            );
+            #[cfg(feature = "tracing")]
+            tracing::debug!(name = "externref::insert", "replaced import");
 
             module.funcs.delete(fn_id);
             fn_mapping.insert(fn_id, Self::patch_insert_fn(module, table_id));
         }
 
         if let Some(fn_id) = imports.get {
-            #[cfg(feature = "processor-log")]
-            log::debug!(
-                target: "externref",
-                "Need to replace `externref::get` import (getting an externref from table)"
-            );
+            #[cfg(feature = "tracing")]
+            tracing::debug!(name = "externref::get", "replaced import");
 
             module.funcs.delete(fn_id);
             let patched_fn_id = Self::patch_get_fn(module, table_id);
@@ -86,11 +84,8 @@ impl PatchedFunctions {
         }
 
         if let Some(fn_id) = imports.drop {
-            #[cfg(feature = "processor-log")]
-            log::debug!(
-                target: "externref",
-                "Need to replace `externref::drop` import (dropping an externref from table)"
-            );
+            #[cfg(feature = "tracing")]
+            tracing::debug!(name = "externref::drop", "replaced import");
 
             module.funcs.delete(fn_id);
             let drop_fn_id = processor.drop_fn_name.map(|(module_name, name)| {
@@ -282,9 +277,6 @@ impl PatchedFunctions {
     }
 
     pub fn replace_calls(&self, module: &mut Module) -> usize {
-        #[cfg(feature = "processor-log")]
-        log::debug!(target: "externref", "Replacing calls to externref imports...");
-
         let mut visitor = ReplaceFunctions::new(&self.fn_mapping);
         for function in module.funcs.iter_mut() {
             if let WasmFunctionKind::Local(local_fn) = &mut function.kind {

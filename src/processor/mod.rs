@@ -33,11 +33,6 @@
 //! # Ok::<_, externref::processor::Error>(())
 //! ```
 
-// Linter settings.
-#![warn(missing_debug_implementations, missing_docs, bare_trait_objects)]
-#![warn(clippy::all, clippy::pedantic)]
-#![allow(clippy::must_use_candidate, clippy::module_name_repetitions)]
-
 use walrus::{passes::gc, Module};
 
 mod error;
@@ -90,18 +85,19 @@ impl<'a> Processor<'a> {
     ///
     /// Returns an error if a module is malformed. This shouldn't normally happen and
     /// could be caused by another post-processor or a bug in the `externref` crate / proc macro.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip_all, err))]
     pub fn process(&self, module: &mut Module) -> Result<(), Error> {
         let raw_section = module.customs.remove_raw(Function::CUSTOM_SECTION_NAME);
         let raw_section = if let Some(section) = raw_section {
             section
         } else {
-            #[cfg(feature = "processor-log")]
-            log::info!(target: "externref", "Module contains no custom section; skipping");
+            #[cfg(feature = "tracing")]
+            tracing::info!("module contains no custom section; skipping");
             return Ok(());
         };
         let functions = Self::parse_section(&raw_section.data)?;
-        #[cfg(feature = "processor-log")]
-        Self::log_functions(&functions);
+        #[cfg(feature = "tracing")]
+        tracing::info!(functions.len = functions.len(), "parsed custom section");
 
         let state = ProcessingState::new(module, self)?;
         state.replace_functions(module);
@@ -118,25 +114,6 @@ impl<'a> Processor<'a> {
             functions.push(next_function);
         }
         Ok(functions)
-    }
-
-    #[cfg(feature = "processor-log")]
-    fn log_functions(functions: &[Function<'_>]) {
-        use crate::FunctionKind;
-
-        log::info!(target: "externref", "Custom section contains {} functions", functions.len());
-        for function in functions {
-            let origin = match &function.kind {
-                FunctionKind::Export => "exported".to_owned(),
-                FunctionKind::Import(module) => format!("imported from module {}", module),
-            };
-            let ref_count = function.externrefs.count_ones();
-            log::info!(
-                target: "externref",
-                "- `{}`: {}, with {} externref(s)",
-                function.name, origin, ref_count
-            );
-        }
     }
 
     /// Processes the provided WASM module `bytes`. This is a higher-level alternative to

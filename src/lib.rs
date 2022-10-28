@@ -66,14 +66,14 @@
 //!
 //! Enables WASM module processing via the [`processor`](crate::processor) module.
 //!
-//! ## `processor-log`
+//! ## `tracing`
 //!
 //! *(Off by default)*
 //!
-//! Enables logging key events during [processing](crate::processor) with the [`log`] facade.
-//! Logs use the `externref` target and mostly `INFO` and `DEBUG` levels.
+//! Enables tracing during [module processing](crate::processor) with the [`tracing`] facade.
+//! Tracing events / spans mostly use `INFO` and `DEBUG` levels.
 //!
-//! [`log`]: https://docs.rs/log/
+//! [`tracing`]: https://docs.rs/tracing/
 //!
 //! # Examples
 //!
