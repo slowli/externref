@@ -1,8 +1,13 @@
 use assert_matches::assert_matches;
 use once_cell::sync::Lazy;
-use tracing_subscriber::{fmt::format::FmtSpan, FmtSubscriber};
+use tracing::{subscriber::DefaultGuard, Level, Subscriber};
+use tracing_capture::{CaptureLayer, CapturedEvent, CapturedSpan, SharedStorage, Storage};
+use tracing_subscriber::{
+    fmt::format::FmtSpan, layer::SubscriberExt, registry::LookupSpan, FmtSubscriber,
+};
 use wasmtime::{Caller, Engine, Extern, ExternRef, Linker, Module, Store, Table, Trap, Val};
 
+use externref::FunctionKind;
 use std::{collections::HashSet, sync::Once};
 
 use externref::processor::Processor;
@@ -15,17 +20,28 @@ type RefAssertion = fn(Caller<'_, Data>, &Table);
 
 static OPTIMIZED_MODULE: Lazy<Vec<u8>> = Lazy::new(|| compile(true));
 
+fn create_fmt_subscriber() -> impl Subscriber + for<'a> LookupSpan<'a> {
+    FmtSubscriber::builder()
+        .pretty()
+        .with_span_events(FmtSpan::CLOSE)
+        .with_test_writer()
+        .with_env_filter("externref=debug")
+        .finish()
+}
+
 fn enable_tracing() {
     static TRACING: Once = Once::new();
 
     TRACING.call_once(|| {
-        FmtSubscriber::builder()
-            .pretty()
-            .with_span_events(FmtSpan::CLOSE)
-            .with_test_writer()
-            .with_env_filter("externref=debug")
-            .init();
+        tracing::subscriber::set_global_default(create_fmt_subscriber()).ok();
     });
+}
+
+fn enable_tracing_assertions() -> (DefaultGuard, SharedStorage) {
+    let storage = SharedStorage::default();
+    let subscriber = create_fmt_subscriber().with(CaptureLayer::new(&storage));
+    let guard = tracing::subscriber::set_default(subscriber);
+    (guard, storage)
 }
 
 #[derive(Debug)]
@@ -156,7 +172,7 @@ fn create_linker(engine: &Engine) -> Linker<Data> {
 
 #[test]
 fn transform_after_optimization() {
-    enable_tracing();
+    let (_guard, storage) = enable_tracing_assertions();
 
     let module = Processor::default()
         .set_drop_fn("test", "drop_ref")
@@ -164,6 +180,8 @@ fn transform_after_optimization() {
         .unwrap();
     let module = Module::new(&Engine::default(), &module).unwrap();
     let linker = create_linker(module.engine());
+
+    assert_tracing_output(&storage.lock());
 
     let ref_assertions: Vec<RefAssertion> = vec![
         |caller, table| assert_refs(caller, table, &[]),
@@ -196,6 +214,78 @@ fn transform_after_optimization() {
     for i in 0..size {
         assert_matches!(externrefs.get(&mut store, i).unwrap(), Val::ExternRef(None));
     }
+}
+
+fn assert_tracing_output(storage: &Storage) {
+    let process_span = find_span_by_name(storage, "process");
+    let process_event = find_event_by_level(process_span, Level::INFO);
+    assert_eq!(
+        process_event["message"].as_debug_str(),
+        Some("parsed custom section")
+    );
+    assert_eq!(process_event["functions.len"], 4_u64);
+
+    let patch_imports_span = find_span_by_name(storage, "patch_imports");
+    let replaced_imports = patch_imports_span.events().iter().filter_map(|event| {
+        if event["message"].as_debug_str() == Some("replaced import") {
+            event["name"].as_str()
+        } else {
+            None
+        }
+    });
+    let replaced_imports: HashSet<_> = replaced_imports.collect();
+    assert_eq!(
+        replaced_imports,
+        HashSet::from_iter(["externref::insert", "externref::get", "externref::drop"])
+    );
+
+    let replace_functions_span = find_span_by_name(storage, "replace_functions");
+    let replaced_calls_event = find_event_by_level(replace_functions_span, Level::INFO);
+    let event_message = replaced_calls_event["message"].as_debug_str().unwrap();
+    assert!(event_message.contains("replaced calls"), "{event_message}");
+    assert!(replaced_calls_event["replaced_count"].as_uint().is_some());
+
+    let transformed_imports = storage.spans().iter().filter_map(|span| {
+        if span.metadata().name() == "transform_imported_fn" {
+            assert!(span["function.kind"].is_debug(&FunctionKind::Import("test")));
+            span["function.name"].as_str()
+        } else {
+            None
+        }
+    });
+    let transformed_imports: HashSet<_> = transformed_imports.collect();
+    assert_eq!(
+        transformed_imports,
+        HashSet::from_iter(["send_message", "message_len"])
+    );
+
+    let transformed_exports = storage.spans().iter().filter_map(|span| {
+        if span.metadata().name() == "transform_export" {
+            span["function.name"].as_str()
+        } else {
+            None
+        }
+    });
+    let transformed_exports: HashSet<_> = transformed_exports.collect();
+    assert_eq!(
+        transformed_exports,
+        HashSet::from_iter(["test_export", "test_nulls"])
+    );
+}
+
+fn find_span_by_name<'a>(storage: &'a Storage, name: &str) -> &'a CapturedSpan {
+    storage
+        .spans()
+        .iter()
+        .find(|span| span.metadata().name() == name)
+        .unwrap()
+}
+
+fn find_event_by_level(span: &CapturedSpan, level: Level) -> &CapturedEvent {
+    span.events()
+        .iter()
+        .find(|event| *event.metadata().level() == level)
+        .unwrap()
 }
 
 #[test]
