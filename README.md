@@ -2,7 +2,7 @@
 
 [![Build Status](https://github.com/slowli/externref/workflows/CI/badge.svg?branch=main)](https://github.com/slowli/externref/actions)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue)](https://github.com/slowli/externref#license)
-![rust 1.59+ required](https://img.shields.io/badge/rust-1.59+-blue.svg?label=Required%20Rust)
+![rust 1.60+ required](https://img.shields.io/badge/rust-1.60+-blue.svg?label=Required%20Rust)
 
 **Documentation:**
 [![crate docs (main)](https://img.shields.io/badge/main-yellow.svg?label=docs)](https://slowli.github.io/externref/externref/)
@@ -17,6 +17,23 @@ Rust does not support reference types natively; there is no way to produce an im
 that has `externref` as an argument or a return type. [`wasm-bindgen`] patches WASM if
 `externref`s are enabled. This library strives to accomplish the same goal for generic
 low-level WASM ABIs (`wasm-bindgen` is specialized for browser hosts).
+
+## `externref` use cases
+
+Since `externref`s are completely opaque from the module perspective, the only way to use
+them is to send an `externref` back to the host as an argument of an imported function.
+(Depending on the function semantics, the call may or may not consume the `externref`
+and may or may not modify the underlying data; this is not reflected
+by the WASM function signature.) An `externref` cannot be dereferenced by the module,
+thus, the module cannot directly access or modify the data behind the reference. Indeed,
+the module cannot even be sure which kind of data is being referenced.
+
+It may seem that this limits `externref` utility significantly,
+but `externref`s can still be useful, e.g. to model [capability-based security] tokens
+or resource handles in the host environment. Another potential use case is encapsulating
+complex data that would be impractical to transfer across the WASM API boundary
+(especially if the data shape may evolve over time), and/or if interactions with data
+must be restricted from the module side.
 
 ## Usage
 
@@ -87,3 +104,4 @@ shall be dual licensed as above, without any additional terms or conditions.
 
 [reference type]: https://webassembly.github.io/spec/core/syntax/types.html#reference-types
 [`wasm-bindgen`]: https://crates.io/crates/wasm-bindgen
+[capability-based security]: https://en.wikipedia.org/wiki/Capability-based_security

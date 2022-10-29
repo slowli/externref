@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 env:
-  msrv: 1.59.0
+  msrv: 1.60.0
   nightly: nightly-2022-05-21
 
 jobs:

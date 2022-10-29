@@ -28,21 +28,18 @@ impl ProcessingState {
         Ok(Self { patched_fns })
     }
 
-    #[cfg(feature = "processor-log")]
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
+    #[cfg_attr(not(feature = "tracing"), allow(unused_variables))]
     pub fn replace_functions(&self, module: &mut Module) {
         let replaced_count = self.patched_fns.replace_calls(module);
-        log::info!(
-            target: "externref",
-            "Replaced {} calls to externref imports",
-            replaced_count
-        );
+        #[cfg(feature = "tracing")]
+        tracing::info!(replaced_count, "replaced calls to externref imports");
     }
 
-    #[cfg(not(feature = "processor-log"))]
-    pub fn replace_functions(&self, module: &mut Module) {
-        self.patched_fns.replace_calls(module);
-    }
-
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(skip_all, fields(functions.len = functions.len()))
+    )]
     pub fn process_functions(
         &self,
         functions: &[Function<'_>],
@@ -71,14 +68,7 @@ impl ProcessingState {
                     functions_returning_ref.insert(fn_id);
                 }
 
-                #[cfg_attr(not(feature = "processor-log"), allow(unused_variables))]
-                if let FunctionKind::Import(module_name) = function.kind {
-                    #[cfg(feature = "processor-log")]
-                    log::info!(
-                        target: "externref",
-                        "Patching imported function `{}` from module `{}`",
-                        function.name, module_name
-                    );
+                if let FunctionKind::Import(_) = function.kind {
                     transform_imported_fn(module, function, fn_id)?;
                 }
             }
@@ -102,6 +92,15 @@ impl ProcessingState {
         Ok(())
     }
 
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(
+            level = "trace",
+            skip_all,
+            ret, err,
+            fields(function.kind = ?function.kind, function.name = function.name)
+        )
+    )]
     fn function_id(function: &Function<'_>, module: &Module) -> Result<Option<FunctionId>, Error> {
         Ok(Some(match function.kind {
             FunctionKind::Export => {
@@ -138,6 +137,10 @@ impl ProcessingState {
         }))
     }
 
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "debug", skip_all, err, fields(function.name = function.name))
+    )]
     #[allow(clippy::needless_collect)] // false positive
     fn transform_export(
         module: &mut Module,
@@ -145,9 +148,6 @@ impl ProcessingState {
         fn_id: FunctionId,
         function: &Function<'_>,
     ) -> Result<(), Error> {
-        #[cfg(feature = "processor-log")]
-        log::info!(target: "externref", "Patching exported function `{}`", function.name);
-
         let local_fn = module.funcs.get_mut(fn_id).kind.unwrap_local_mut();
         let (params, results) = patch_type_inner(&module.types, function, local_fn.ty())?;
 
@@ -218,6 +218,10 @@ impl ProcessingState {
     ///
     /// Finally, after collecting all uses, we replace locals with the new ones. For exports,
     /// this process is combined with cloning function code.
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "trace", skip_all, fields(fn_id))
+    )]
     fn transform_local_fn(
         module: &mut Module,
         functions_returning_ref: &HashSet<FunctionId>,
@@ -233,10 +237,17 @@ impl ProcessingState {
         ir::dfs_pre_order_mut(&mut calls_visitor, local_fn, local_fn.entry_block());
         let new_locals = calls_visitor.new_locals;
         if new_locals.is_empty() {
-            // No new locals are introduced by calls; the function doesn't need
-            // to be transformed.
+            #[cfg(feature = "tracing")]
+            tracing::trace!("no new locals; skipping function transform");
             return;
         }
+
+        #[cfg(feature = "tracing")]
+        tracing::debug!(
+            ?fn_id,
+            new_locals.len = new_locals.len(),
+            "replacing function locals"
+        );
 
         // Determine which `local.get $arg` instructions must be replaced with new arg locals.
         let mut locals_visitor = LocalReplacementCounter::new(iter::empty(), new_locals);
@@ -493,6 +504,15 @@ impl ir::Visitor<'_> for FunctionCloner {
     }
 }
 
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        level = "debug",
+        skip_all,
+        err,
+        fields(function.kind = ?function.kind, function.name = function.name)
+    )
+)]
 fn transform_imported_fn(
     module: &mut Module,
     function: &Function<'_>,
