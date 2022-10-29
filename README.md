@@ -18,6 +18,23 @@ that has `externref` as an argument or a return type. [`wasm-bindgen`] patches W
 `externref`s are enabled. This library strives to accomplish the same goal for generic
 low-level WASM ABIs (`wasm-bindgen` is specialized for browser hosts).
 
+## `externref` use cases
+
+Since `externref`s are completely opaque from the module perspective, the only way to use
+them is to send an `externref` back to the host as an argument of an imported function.
+(Depending on the function semantics, the call may or may not consume the `externref`
+and may or may not modify the underlying data; this is not reflected
+by the WASM function signature.) An `externref` cannot be dereferenced by the module,
+thus, the module cannot directly access or modify the data behind the reference. Indeed,
+the module cannot even be sure which kind of data is being referenced.
+
+It may seem that this limits `externref` utility significantly,
+but `externref`s can still be useful, e.g. to model [capability-based security] tokens
+or resource handles in the host environment. Another potential use case is encapsulating
+complex data that would be impractical to transfer across the WASM API boundary
+(especially if the data shape may evolve over time), and/or if interactions with data
+must be restricted from the module side.
+
 ## Usage
 
 Add this to your `Crate.toml`:
@@ -87,3 +104,4 @@ shall be dual licensed as above, without any additional terms or conditions.
 
 [reference type]: https://webassembly.github.io/spec/core/syntax/types.html#reference-types
 [`wasm-bindgen`]: https://crates.io/crates/wasm-bindgen
+[capability-based security]: https://en.wikipedia.org/wiki/Capability-based_security
