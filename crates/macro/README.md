@@ -4,7 +4,7 @@
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue)](https://github.com/slowli/externref#license)
 ![rust 1.60+ required](https://img.shields.io/badge/rust-1.60+-blue.svg?label=Required%20Rust)
 
-**Documentation:**
+**Documentation:** [![Docs.rs](https://docs.rs/externref-macro/badge.svg)](https://docs.rs/externref-macro/)
 [![crate docs (main)](https://img.shields.io/badge/main-yellow.svg?label=docs)](https://slowli.github.io/externref/externref_macro/)
 
 This macro complements the [`externref`] library, wrapping imported or exported functions
