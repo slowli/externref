@@ -1,0 +1,5 @@
+error: Unsupported item; only `extern "C" {}` modules and `extern "C" fn ...` exports are supported
+ --> tests/ui/unsupported_item.rs:4:1
+  |
+4 | pub struct Test;
+  | ^^^^^^^^^^^^^^^^

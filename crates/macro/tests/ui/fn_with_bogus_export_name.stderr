@@ -1,0 +1,11 @@
+error: Unexpected `export_name` attribute format; expected a name-value pair
+ --> tests/ui/fn_with_bogus_export_name.rs:4:1
+  |
+4 | #[export_name("what")]
+  | ^^^^^^^^^^^^^^^^^^^^^^
+
+error: Unexpected `export_name` value; expected a string
+  --> tests/ui/fn_with_bogus_export_name.rs:10:1
+   |
+10 | #[export_name = 10]
+   | ^^^^^^^^^^^^^^^^^^^

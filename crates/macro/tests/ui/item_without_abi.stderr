@@ -1,0 +1,11 @@
+error: exported function must be marked with `extern "C"`
+ --> tests/ui/item_without_abi.rs:4:5
+  |
+4 | pub fn test() {
+  |     ^^^^^^^^^
+
+error: foreign module must be marked with `extern "C"`
+ --> tests/ui/item_without_abi.rs:9:1
+  |
+9 | extern {
+  | ^^^^^^

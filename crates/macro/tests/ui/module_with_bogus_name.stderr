@@ -1,0 +1,17 @@
+error: Unexpected contents of `#[link(..)]` attr (expected a list of name-value pairs)
+ --> tests/ui/module_with_bogus_name.rs:4:1
+  |
+4 | #[link = 5]
+  | ^^^^^^^^^^^
+
+error: #[link(wasm_import_module = "..")] must be specified on the foreign module
+  --> tests/ui/module_with_bogus_name.rs:10:1
+   |
+10 | #[link(wasm_module = "what")]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: Unexpected WASM module name format (expected a string)
+  --> tests/ui/module_with_bogus_name.rs:16:29
+   |
+16 | #[link(wasm_import_module = 5)]
+   |                             ^
