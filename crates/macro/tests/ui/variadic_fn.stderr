@@ -1,0 +1,5 @@
+error: Variadic functions are not supported
+ --> tests/ui/variadic_fn.rs:4:49
+  |
+4 | pub extern "C" fn printf(format: *const c_char, ...) {
+  |                                                 ^^^

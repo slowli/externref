@@ -572,11 +572,13 @@ fn patch_type_inner(
         *placement = ValType::Externref;
     }
 
-    #[cfg(feature = "processor-log")]
-    log::debug!(
-        target: "externref",
-        "Replacing signature {:?} -> {:?} with {:?} -> {:?}",
-        params, results, new_params, new_results
+    #[cfg(feature = "tracing")]
+    tracing::debug!(
+        ?params,
+        ?results,
+        ?new_params,
+        ?new_results,
+        "replaced function signature"
     );
     Ok((new_params, new_results))
 }

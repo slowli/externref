@@ -1,0 +1,11 @@
+error: Unexpected ABI win64 for exported function; expected `C`
+ --> tests/ui/item_with_bogus_abi.rs:4:12
+  |
+4 | pub extern "win64" fn test() {
+  |            ^^^^^^^
+
+error: Unexpected ABI win64 for foreign module; expected `C`
+ --> tests/ui/item_with_bogus_abi.rs:9:8
+  |
+9 | extern "win64" {
+  |        ^^^^^^^

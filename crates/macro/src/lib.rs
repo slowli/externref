@@ -20,7 +20,7 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
-use syn::Item;
+use syn::{parse::Error as SynError, Item};
 
 mod externref;
 
@@ -48,10 +48,9 @@ pub fn externref(_attr: TokenStream, input: TokenStream) -> TokenStream {
     let output = match syn::parse::<Item>(input) {
         Ok(Item::ForeignMod(mut module)) => for_foreign_module(&mut module),
         Ok(Item::Fn(mut function)) => for_export(&mut function),
-        Ok(other_item) => {
-            return darling::Error::custom(MSG)
-                .with_span(&other_item)
-                .write_errors()
+        Ok(other) => {
+            return SynError::new_spanned(other, MSG)
+                .into_compile_error()
                 .into()
         }
         Err(err) => return err.into_compile_error().into(),

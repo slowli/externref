@@ -1,0 +1,11 @@
+error: Unexpected `link_name` attribute format; expected a name-value pair
+ --> tests/ui/module_with_bogus_link_name.rs:6:5
+  |
+6 |     #[link_name("huh")]
+  |     ^^^^^^^^^^^^^^^^^^^
+
+error: Unexpected `link_name` value; expected a string
+  --> tests/ui/module_with_bogus_link_name.rs:13:5
+   |
+13 |     #[link_name = 3]
+   |     ^^^^^^^^^^^^^^^^

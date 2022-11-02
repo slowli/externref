@@ -1,7 +1,7 @@
 use assert_matches::assert_matches;
 use once_cell::sync::Lazy;
 use tracing::{subscriber::DefaultGuard, Level, Subscriber};
-use tracing_capture::{CaptureLayer, CapturedEvent, CapturedSpan, SharedStorage, Storage};
+use tracing_capture::{CaptureLayer, SharedStorage, Storage};
 use tracing_subscriber::{
     fmt::format::FmtSpan, layer::SubscriberExt, registry::LookupSpan, FmtSubscriber,
 };
@@ -217,18 +217,23 @@ fn transform_after_optimization() {
 }
 
 fn assert_tracing_output(storage: &Storage) {
-    let process_span = find_span_by_name(storage, "process");
-    let process_event = find_event_by_level(process_span, Level::INFO);
-    assert_eq!(
-        process_event["message"].as_debug_str(),
-        Some("parsed custom section")
-    );
-    assert_eq!(process_event["functions.len"], 4_u64);
+    use predicates::{
+        ord::{eq, gt},
+        str::contains,
+    };
+    use tracing_capture::predicates::{field, into_fn, level, message, name, value, ScanExt};
 
-    let patch_imports_span = find_span_by_name(storage, "patch_imports");
-    let replaced_imports = patch_imports_span.events().iter().filter_map(|event| {
-        if event["message"].as_debug_str() == Some("replaced import") {
-            event["name"].as_str()
+    let spans = storage.scan_spans();
+    let process_span = spans.single(&name(eq("process")));
+    let matches =
+        level(Level::INFO) & message(eq("parsed custom section")) & field("functions.len", 4_u64);
+    process_span.scan_events().single(&matches);
+
+    let patch_imports_span = spans.single(&name(eq("patch_imports")));
+    let matches = into_fn(message(contains("replaced import")) & level(Level::DEBUG));
+    let replaced_imports = patch_imports_span.events().filter_map(|event| {
+        if matches(&event) {
+            event.value("name")?.as_str()
         } else {
             None
         }
@@ -239,16 +244,16 @@ fn assert_tracing_output(storage: &Storage) {
         HashSet::from_iter(["externref::insert", "externref::get", "externref::drop"])
     );
 
-    let replace_functions_span = find_span_by_name(storage, "replace_functions");
-    let replaced_calls_event = find_event_by_level(replace_functions_span, Level::INFO);
-    let event_message = replaced_calls_event["message"].as_debug_str().unwrap();
-    assert!(event_message.contains("replaced calls"), "{event_message}");
-    assert!(replaced_calls_event["replaced_count"].as_uint().is_some());
+    let replace_functions_span = spans.single(&name(eq("replace_functions")));
+    let matches = level(Level::INFO)
+        & message(contains("replaced calls"))
+        & field("replaced_count", value(gt(0_u64)));
+    replace_functions_span.scan_events().single(&matches);
 
-    let transformed_imports = storage.spans().iter().filter_map(|span| {
+    let transformed_imports = storage.all_spans().filter_map(|span| {
         if span.metadata().name() == "transform_imported_fn" {
             assert!(span["function.kind"].is_debug(&FunctionKind::Import("test")));
-            span["function.name"].as_str()
+            span.value("function.name")?.as_str()
         } else {
             None
         }
@@ -259,9 +264,9 @@ fn assert_tracing_output(storage: &Storage) {
         HashSet::from_iter(["send_message", "message_len"])
     );
 
-    let transformed_exports = storage.spans().iter().filter_map(|span| {
+    let transformed_exports = storage.all_spans().filter_map(|span| {
         if span.metadata().name() == "transform_export" {
-            span["function.name"].as_str()
+            span.value("function.name")?.as_str()
         } else {
             None
         }
@@ -271,21 +276,6 @@ fn assert_tracing_output(storage: &Storage) {
         transformed_exports,
         HashSet::from_iter(["test_export", "test_nulls"])
     );
-}
-
-fn find_span_by_name<'a>(storage: &'a Storage, name: &str) -> &'a CapturedSpan {
-    storage
-        .spans()
-        .iter()
-        .find(|span| span.metadata().name() == name)
-        .unwrap()
-}
-
-fn find_event_by_level(span: &CapturedSpan, level: Level) -> &CapturedEvent {
-    span.events()
-        .iter()
-        .find(|event| *event.metadata().level() == level)
-        .unwrap()
 }
 
 #[test]
