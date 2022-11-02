@@ -1,29 +1,33 @@
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{
-    spanned::Spanned, Attribute, FnArg, ForeignItem, GenericArgument, Ident, ItemFn,
-    ItemForeignMod, Lit, LitStr, Meta, MetaList, NestedMeta, PatType, PathArguments, Signature,
-    Type, TypePath, Visibility,
+    parse::Error as SynError, spanned::Spanned, Attribute, FnArg, ForeignItem, GenericArgument,
+    Ident, ItemFn, ItemForeignMod, Lit, LitStr, Meta, MetaList, NestedMeta, PatType, PathArguments,
+    Signature, Type, TypePath, Visibility,
 };
 
 use std::{collections::HashMap, mem};
 
-fn check_abi(abi_name: Option<&LitStr>, root_span: &impl Spanned) -> darling::Result<()> {
+fn check_abi(
+    target_name: &str,
+    abi_name: Option<&LitStr>,
+    root_span: &impl ToTokens,
+) -> Result<(), SynError> {
     let abi_name = abi_name.ok_or_else(|| {
-        darling::Error::custom("Exported function must be marked with `extern \"C\"`")
-            .with_span(root_span)
+        let msg = format!("{target_name} must be marked with `extern \"C\"`");
+        SynError::new_spanned(root_span, msg)
     })?;
     if abi_name.value() != "C" {
         let msg = format!(
-            "Unexpected ABI {} for exported function; expected `C`",
+            "Unexpected ABI {} for {target_name}; expected `C`",
             abi_name.value()
         );
-        return Err(darling::Error::custom(msg).with_span(&abi_name));
+        return Err(SynError::new(abi_name.span(), msg));
     }
     Ok(())
 }
 
-fn attr_string(attrs: &[Attribute], name: &str) -> darling::Result<Option<String>> {
+fn attr_string(attrs: &[Attribute], name: &str) -> Result<Option<String>, SynError> {
     let attr = attrs.iter().find(|attr| attr.path.is_ident(name));
     let attr = if let Some(attr) = attr {
         attr
@@ -38,13 +42,13 @@ fn attr_string(attrs: &[Attribute], name: &str) -> darling::Result<Option<String
             "Unexpected `{}` attribute format; expected a name-value pair",
             name
         );
-        return Err(darling::Error::custom(msg).with_span(attr));
+        return Err(SynError::new_spanned(attr, msg));
     };
     if let Lit::Str(str) = attr_value {
         Ok(Some(str.value()))
     } else {
         let msg = format!("Unexpected `{}` value; expected a string", name);
-        Err(darling::Error::custom(msg).with_span(attr))
+        Err(SynError::new_spanned(attr, msg))
     }
 }
 
@@ -179,13 +183,13 @@ struct Function {
 }
 
 impl Function {
-    fn new(function: &ItemFn) -> darling::Result<Self> {
+    fn new(function: &ItemFn) -> Result<Self, SynError> {
         let abi_name = function.sig.abi.as_ref().and_then(|abi| abi.name.as_ref());
-        check_abi(abi_name, &function.sig)?;
+        check_abi("exported function", abi_name, &function.sig)?;
 
         if let Some(variadic) = &function.sig.variadic {
             let msg = "Variadic functions are not supported";
-            return Err(darling::Error::custom(msg).with_span(variadic));
+            return Err(SynError::new(variadic.span(), msg));
         }
         let export_name = attr_string(&function.attrs, "export_name")?;
         Ok(Self::from_sig(&function.sig, export_name))
@@ -358,7 +362,7 @@ impl Function {
 pub(crate) fn for_export(function: &mut ItemFn) -> TokenStream {
     let parsed_function = match Function::new(function) {
         Ok(function) => function,
-        Err(err) => return err.write_errors(),
+        Err(err) => return err.into_compile_error(),
     };
     let (declaration, export) = if parsed_function.needs_declaring() {
         // "Un-export" the function by removing the relevant attributes.
@@ -392,15 +396,17 @@ struct Imports {
 }
 
 impl Imports {
-    fn new(module: &mut ItemForeignMod) -> darling::Result<Self> {
+    fn new(module: &mut ItemForeignMod) -> Result<Self, SynError> {
         const NO_ATTR_MSG: &str = "#[link(wasm_import_module = \"..\")] must be specified \
             on the foreign module";
 
-        check_abi(module.abi.name.as_ref(), &module.abi)?;
+        check_abi("foreign module", module.abi.name.as_ref(), &module.abi)?;
 
         let link_attr = module.attrs.iter().find(|attr| attr.path.is_ident("link"));
-        let link_attr =
-            link_attr.ok_or_else(|| darling::Error::custom(NO_ATTR_MSG).with_span(&module))?;
+        let link_attr = match link_attr {
+            Some(attr) => attr,
+            None => return Err(SynError::new_spanned(module, NO_ATTR_MSG)),
+        };
         let link_meta = link_attr.parse_meta()?;
 
         let module_name = if let Meta::List(MetaList { nested, .. }) = &link_meta {
@@ -411,17 +417,18 @@ impl Imports {
                 _ => None,
             })
         } else {
-            let msg = "Unexpected contents of `#[link(..)]` attr (expected a list)";
-            return Err(darling::Error::custom(msg).with_span(link_attr));
+            let msg =
+                "Unexpected contents of `#[link(..)]` attr (expected a list of name-value pairs)";
+            return Err(SynError::new_spanned(link_attr, msg));
         };
 
         let module_name =
-            module_name.ok_or_else(|| darling::Error::custom(NO_ATTR_MSG).with_span(link_attr))?;
+            module_name.ok_or_else(|| SynError::new_spanned(link_attr, NO_ATTR_MSG))?;
         let module_name = if let Lit::Str(str) = module_name {
             str.value()
         } else {
             let msg = "Unexpected WASM module name format (expected a string)";
-            return Err(darling::Error::custom(msg).with_span(module_name));
+            return Err(SynError::new(module_name.span(), msg));
         };
 
         let mut functions = Vec::with_capacity(module.items.len());
@@ -482,7 +489,7 @@ impl Imports {
 pub(crate) fn for_foreign_module(module: &mut ItemForeignMod) -> TokenStream {
     let parsed_module = match Imports::new(module) {
         Ok(module) => module,
-        Err(err) => return err.write_errors(),
+        Err(err) => return err.into_compile_error(),
     };
     let declarations = parsed_module.declarations();
     let wrappers = parsed_module.wrappers();
