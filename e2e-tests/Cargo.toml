@@ -3,6 +3,7 @@ name = "externref-test"
 version = "0.0.0"
 edition = "2021"
 publish = false
+description = "End-to-end test crate for `externref`"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -13,6 +14,7 @@ externref = { version = "0.1.0", path = ".." }
 [dev-dependencies]
 assert_matches = "1.5.0"
 once_cell = "1.13.0"
+predicates = { version = "2.1.1", default-features = false }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
 wasmtime = "1.0.1"
@@ -22,4 +24,4 @@ externref = { version = "0.1.0", path = "..", features = ["processor", "tracing"
 [dev-dependencies.tracing-capture]
 version = "0.1.0"
 git = "https://github.com/slowli/tracing-toolbox.git"
-rev = "35f6388b534c2223e29be2c720f0348de268559e"
+rev = "502655fa03d9bcd9f7721b05baba63b550b3d599"
