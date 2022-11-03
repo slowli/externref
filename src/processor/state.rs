@@ -424,8 +424,8 @@ impl ir::VisitorMut for LocalReplacer {
     }
 
     fn visit_local_get_mut(&mut self, instr: &mut ir::LocalGet) {
-        let seq = self.current_seqs.last().unwrap();
-        if let Some(replacement) = self.take_replacement(*seq, instr.local) {
+        let seq = *self.current_seqs.last().unwrap();
+        if let Some(replacement) = self.take_replacement(seq, instr.local) {
             instr.local = replacement;
         }
     }
