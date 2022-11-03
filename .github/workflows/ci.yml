@@ -28,30 +28,18 @@ jobs:
         with:
           toolchain: ${{ env.msrv }}
           override: true
-          target: wasm32-unknown-unknown
-      - name: Install wasm-opt
-        run: |
-          wget -q -O binaryen.tar.gz https://github.com/WebAssembly/binaryen/releases/download/version_108/binaryen-version_108-x86_64-linux.tar.gz && \
-          tar xf binaryen.tar.gz && \
-          sudo install binaryen-version_108/bin/wasm-opt /usr/local/bin
 
-      # Build the E2E crate first to speed up its testing.
-      - name: Build E2E test crate
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: -p externref-test --lib --target wasm32-unknown-unknown --profile wasm
-
+      # The E2E test uses `wasmtime` with frequently changing MSRV, so we don't test it here.
       - name: Run tests
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace --all-features --all-targets
+          args: -p externref -p externref-macro --all-features --all-targets
       - name: Run doc tests
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace --all-features --doc
+          args: -p externref -p externref-macro --all-features --doc
 
   build:
     runs-on: ubuntu-latest
