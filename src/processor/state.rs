@@ -11,7 +11,7 @@ use std::{
 };
 
 use super::{
-    functions::{ExternrefImports, PatchedFunctions},
+    functions::{get_offset, ExternrefImports, PatchedFunctions},
     Error, Location, Processor,
 };
 use crate::{Function, FunctionKind};
@@ -248,6 +248,7 @@ impl ProcessingState {
         } else if !can_have_locals {
             return Err(Error::UnexpectedCall {
                 function_name: function.name.clone(),
+                code_offset: function_offset(local_fn),
             });
         }
 
@@ -265,6 +266,14 @@ impl ProcessingState {
         ir::dfs_pre_order_mut(&mut replacer, local_fn, local_fn.entry_block());
         Ok(())
     }
+}
+
+fn function_offset(local_fn: &LocalFunction) -> Option<u32> {
+    local_fn
+        .block(local_fn.entry_block())
+        .iter()
+        .next()
+        .and_then(|(_, location)| get_offset(*location))
 }
 
 /// Visitor to detect calls to functions returning `externref`s and create a new ref local

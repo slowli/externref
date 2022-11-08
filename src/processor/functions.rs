@@ -3,7 +3,7 @@
 use walrus::{
     ir::{self, BinaryOp},
     Function, FunctionBuilder, FunctionId, FunctionKind as WasmFunctionKind, ImportKind,
-    InstrSeqBuilder, LocalFunction, LocalId, Module, ModuleImports, TableId, ValType,
+    InstrLocId, InstrSeqBuilder, LocalFunction, LocalId, Module, ModuleImports, TableId, ValType,
 };
 
 use std::collections::HashSet;
@@ -301,18 +301,16 @@ impl PatchedFunctions {
         Ok((visitor.replaced_count, guarded_fns))
     }
 
-    fn remove_guards(
-        guard_id: FunctionId,
-        function: &mut Function,
-    ) -> Result<bool, Error> {
+    fn remove_guards(guard_id: FunctionId, function: &mut Function) -> Result<bool, Error> {
         let local_fn = function.kind.unwrap_local_mut();
         let mut guard_visitor = GuardRemover::new(guard_id, local_fn);
         ir::dfs_pre_order_mut(&mut guard_visitor, local_fn, local_fn.entry_block());
         match guard_visitor.placement {
             None => Ok(false),
             Some(GuardPlacement::Correct) => Ok(true),
-            Some(GuardPlacement::Incorrect) => Err(Error::IncorrectGuard {
+            Some(GuardPlacement::Incorrect(code_offset)) => Err(Error::IncorrectGuard {
                 function_name: function.name.clone(),
+                code_offset,
             }),
         }
     }
@@ -346,7 +344,8 @@ impl ir::VisitorMut for FunctionsReplacer<'_> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum GuardPlacement {
     Correct,
-    Incorrect,
+    // The encapsulated value is the WASM offset.
+    Incorrect(Option<u32>),
 }
 
 /// Visitor removing invocations of a certain function.
@@ -374,13 +373,13 @@ impl ir::VisitorMut for GuardRemover {
     fn start_instr_seq_mut(&mut self, instr_seq: &mut ir::InstrSeq) {
         let is_entry_seq = instr_seq.id() == self.entry_seq_id;
         let mut idx = 0;
-        instr_seq.instrs.retain(|(instr, _)| {
+        instr_seq.instrs.retain(|(instr, location)| {
             let placement = if let ir::Instr::Call(call) = instr {
                 if call.func == self.guard_id {
                     Some(if is_entry_seq && idx == 0 {
                         GuardPlacement::Correct
                     } else {
-                        GuardPlacement::Incorrect
+                        GuardPlacement::Incorrect(get_offset(*location))
                     })
                 } else {
                     None
@@ -394,6 +393,15 @@ impl ir::VisitorMut for GuardRemover {
             idx += 1;
             placement.is_none()
         });
+    }
+}
+
+/// Gets WASM bytecode offset.
+pub(crate) fn get_offset(location: InstrLocId) -> Option<u32> {
+    if location.is_default() {
+        None
+    } else {
+        Some(location.data())
     }
 }
 
@@ -492,7 +500,7 @@ mod tests {
         let err = fns.replace_calls(&mut module).unwrap_err();
         assert_matches!(
             err,
-            Error::IncorrectGuard { function_name: Some(name) } if name == "test"
+            Error::IncorrectGuard { function_name: Some(name), .. } if name == "test"
         );
     }
 }

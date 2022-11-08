@@ -72,6 +72,8 @@ pub enum Error {
     IncorrectGuard {
         /// Name of the function with an incorrectly placed guard.
         function_name: Option<String>,
+        /// WASM bytecode offset of the offending guard.
+        code_offset: Option<u32>,
     },
     /// Unexpected call to a function returning `externref`. Such calls should be confined
     /// in order for the processor to work properly. Like with [`Self::IncorrectGuard`],
@@ -79,6 +81,8 @@ pub enum Error {
     UnexpectedCall {
         /// Name of the function containing an unexpected call.
         function_name: Option<String>,
+        /// WASM bytecode offset of the offending call.
+        code_offset: Option<u32>,
     },
 }
 
@@ -139,23 +143,36 @@ impl fmt::Display for Error {
                 )
             }
 
-            Self::IncorrectGuard { function_name } => {
+            Self::IncorrectGuard {
+                function_name,
+                code_offset,
+            } => {
                 let function_name = function_name
                     .as_ref()
                     .map_or("(unnamed function)", String::as_str);
+                let code_offset = code_offset
+                    .as_ref()
+                    .map_or_else(String::new, |offset| format!(" at {offset}"));
                 write!(
                     formatter,
-                    "incorrectly placed externref guard in {function_name}. {EXTERNAL_TOOL_TIP}"
+                    "incorrectly placed externref guard in {function_name}{code_offset}. \
+                     {EXTERNAL_TOOL_TIP}"
                 )
             }
-            Self::UnexpectedCall { function_name } => {
+            Self::UnexpectedCall {
+                function_name,
+                code_offset,
+            } => {
                 let function_name = function_name
                     .as_ref()
                     .map_or("(unnamed function)", String::as_str);
+                let code_offset = code_offset
+                    .as_ref()
+                    .map_or_else(String::new, |offset| format!(" at {offset}"));
                 write!(
                     formatter,
-                    "unexpected call to an `externref`-returning function in {function_name}. \
-                     {EXTERNAL_TOOL_TIP}"
+                    "unexpected call to an `externref`-returning function \
+                     in {function_name}{code_offset}. {EXTERNAL_TOOL_TIP}"
                 )
             }
         }
