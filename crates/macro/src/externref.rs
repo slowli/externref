@@ -324,7 +324,14 @@ impl Function {
             ReturnType::Default => quote!(#delegation;),
         };
 
-        (quote!(#vis #sig { #delegation }), new_ident)
+        let wrapper = quote! {
+            #[inline(never)]
+            #vis #sig {
+                unsafe { externref::ExternRef::guard(); }
+                #delegation
+            }
+        };
+        (wrapper, new_ident)
     }
 
     fn create_externrefs(&self) -> impl ToTokens {
@@ -593,11 +600,13 @@ mod tests {
 
         let wrapper: ItemFn = syn::parse_quote!(#wrapper);
         let expected: ItemFn = syn::parse_quote! {
+            #[inline(never)]
             unsafe fn send_message(
                 __arg0: &Resource<Sender>,
                 __arg1: *const u8,
                 __arg2: usize,
             ) -> Resource<Bytes> {
+                unsafe { externref::ExternRef::guard(); }
                 let __output = __externref_send_message(
                     externref::Resource::raw(core::option::Option::Some(__arg0)),
                     __arg1,
