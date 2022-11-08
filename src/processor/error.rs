@@ -32,6 +32,7 @@ pub enum Error {
     Read(ReadError),
     /// Error parsing the WASM module.
     Wasm(anyhow::Error),
+
     /// Unexpected type of an import (expected a function).
     UnexpectedImportType {
         /// Name of the module.
@@ -65,30 +66,45 @@ pub enum Error {
         /// Actual type of the function (the expected type is always `i32`).
         real_type: walrus::ValType,
     },
+
+    /// Incorrectly placed `externref` guard. This is caused by processing the WASM module
+    /// with external tools (e.g., `wasm-opt`) before using this processor.
+    IncorrectGuard {
+        /// Name of the function with an incorrectly placed guard.
+        function_name: Option<String>,
+    },
+    /// Unexpected call to a function returning `externref`. Such calls should be confined
+    /// in order for the processor to work properly. Like with [`Self::IncorrectGuard`],
+    /// such errors should only be caused by external tools (e.g., `wasm-opt`).
+    UnexpectedCall {
+        /// Name of the function containing an unexpected call.
+        function_name: Option<String>,
+    },
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        const EXTERNAL_TOOL_TIP: &str = "This can be caused by an external WASM manipulation tool \
+            such as `wasm-opt`. Please run such tools *after* the externref processor.";
+
         match self {
-            Self::Read(err) => write!(formatter, "failed reading WASM custom section: {}", err),
-            Self::Wasm(err) => write!(formatter, "failed reading WASM module: {}", err),
+            Self::Read(err) => write!(formatter, "failed reading WASM custom section: {err}"),
+            Self::Wasm(err) => write!(formatter, "failed reading WASM module: {err}"),
 
             Self::UnexpectedImportType { module, name } => {
                 write!(
                     formatter,
-                    "unexpected type of import `{}::{}`; expected a function",
-                    module, name
+                    "unexpected type of import `{module}::{name}`; expected a function"
                 )
             }
 
             Self::NoExport(name) => {
-                write!(formatter, "missing exported function `{}`", name)
+                write!(formatter, "missing exported function `{name}`")
             }
             Self::UnexpectedExportType(name) => {
                 write!(
                     formatter,
-                    "unexpected type of export `{}`; expected a function",
-                    name
+                    "unexpected type of export `{name}`; expected a function"
                 )
             }
 
@@ -100,11 +116,11 @@ impl fmt::Display for Error {
             } => {
                 let module_descr = module
                     .as_ref()
-                    .map_or_else(String::new, |module| format!(" imported from `{}`", module));
+                    .map_or_else(String::new, |module| format!(" imported from `{module}`"));
                 write!(
                     formatter,
-                    "unexpected arity for function `{}`{}: expected {}, got {}",
-                    name, module_descr, expected_arity, real_arity
+                    "unexpected arity for function `{name}`{module_descr}: \
+                     expected {expected_arity}, got {real_arity}"
                 )
             }
             Self::UnexpectedType {
@@ -115,11 +131,31 @@ impl fmt::Display for Error {
             } => {
                 let module_descr = module
                     .as_ref()
-                    .map_or_else(String::new, |module| format!(" imported from `{}`", module));
+                    .map_or_else(String::new, |module| format!(" imported from `{module}`"));
                 write!(
                     formatter,
-                    "{} of function `{}`{} has unexpected type; expected `i32`, got {}",
-                    location, name, module_descr, real_type
+                    "{location} of function `{name}`{module_descr} has unexpected type; \
+                     expected `i32`, got {real_type}"
+                )
+            }
+
+            Self::IncorrectGuard { function_name } => {
+                let function_name = function_name
+                    .as_ref()
+                    .map_or("(unnamed function)", String::as_str);
+                write!(
+                    formatter,
+                    "incorrectly placed externref guard in {function_name}. {EXTERNAL_TOOL_TIP}"
+                )
+            }
+            Self::UnexpectedCall { function_name } => {
+                let function_name = function_name
+                    .as_ref()
+                    .map_or("(unnamed function)", String::as_str);
+                write!(
+                    formatter,
+                    "unexpected call to an `externref`-returning function in {function_name}. \
+                     {EXTERNAL_TOOL_TIP}"
                 )
             }
         }

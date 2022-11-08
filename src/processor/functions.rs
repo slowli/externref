@@ -2,11 +2,12 @@
 
 use walrus::{
     ir::{self, BinaryOp},
-    FunctionBuilder, FunctionId, FunctionKind as WasmFunctionKind, ImportKind, InstrSeqBuilder,
-    LocalId, Module, ModuleImports, TableId, ValType,
+    Function, FunctionBuilder, FunctionId, FunctionKind as WasmFunctionKind, ImportKind,
+    InstrSeqBuilder, LocalFunction, LocalId, Module, ModuleImports, TableId, ValType,
 };
 
-use std::collections::HashMap;
+use std::collections::HashSet;
+use std::{cmp, collections::HashMap};
 
 use super::{Error, Processor};
 
@@ -15,6 +16,7 @@ pub(crate) struct ExternrefImports {
     insert: Option<FunctionId>,
     get: Option<FunctionId>,
     drop: Option<FunctionId>,
+    guard: Option<FunctionId>,
 }
 
 impl ExternrefImports {
@@ -25,6 +27,7 @@ impl ExternrefImports {
             insert: Self::take_import(imports, "insert")?,
             get: Self::take_import(imports, "get")?,
             drop: Self::take_import(imports, "drop")?,
+            guard: Self::take_import(imports, "guard")?,
         })
     }
 
@@ -49,6 +52,7 @@ impl ExternrefImports {
 pub(crate) struct PatchedFunctions {
     fn_mapping: HashMap<FunctionId, FunctionId>,
     get_ref_id: Option<FunctionId>,
+    guard_id: Option<FunctionId>,
 }
 
 impl PatchedFunctions {
@@ -98,6 +102,7 @@ impl PatchedFunctions {
         Self {
             fn_mapping,
             get_ref_id,
+            guard_id: imports.guard,
         }
     }
 
@@ -276,25 +281,51 @@ impl PatchedFunctions {
         self.get_ref_id
     }
 
-    pub fn replace_calls(&self, module: &mut Module) -> usize {
-        let mut visitor = ReplaceFunctions::new(&self.fn_mapping);
+    pub fn replace_calls(
+        &self,
+        module: &mut Module,
+    ) -> Result<(usize, HashSet<FunctionId>), Error> {
+        let mut visitor = FunctionsReplacer::new(&self.fn_mapping);
+        let mut guarded_fns = HashSet::new();
         for function in module.funcs.iter_mut() {
             if let WasmFunctionKind::Local(local_fn) = &mut function.kind {
                 ir::dfs_pre_order_mut(&mut visitor, local_fn, local_fn.entry_block());
+
+                if let Some(guard_id) = self.guard_id {
+                    if Self::remove_guards(guard_id, function)? {
+                        guarded_fns.insert(function.id());
+                    }
+                }
             }
         }
-        visitor.replaced_count
+        Ok((visitor.replaced_count, guarded_fns))
+    }
+
+    fn remove_guards(
+        guard_id: FunctionId,
+        function: &mut Function,
+    ) -> Result<bool, Error> {
+        let local_fn = function.kind.unwrap_local_mut();
+        let mut guard_visitor = GuardRemover::new(guard_id, local_fn);
+        ir::dfs_pre_order_mut(&mut guard_visitor, local_fn, local_fn.entry_block());
+        match guard_visitor.placement {
+            None => Ok(false),
+            Some(GuardPlacement::Correct) => Ok(true),
+            Some(GuardPlacement::Incorrect) => Err(Error::IncorrectGuard {
+                function_name: function.name.clone(),
+            }),
+        }
     }
 }
 
 /// Visitor replacing invocations of patched functions.
 #[derive(Debug)]
-struct ReplaceFunctions<'a> {
+struct FunctionsReplacer<'a> {
     fn_mapping: &'a HashMap<FunctionId, FunctionId>,
     replaced_count: usize,
 }
 
-impl<'a> ReplaceFunctions<'a> {
+impl<'a> FunctionsReplacer<'a> {
     fn new(fn_mapping: &'a HashMap<FunctionId, FunctionId>) -> Self {
         Self {
             fn_mapping,
@@ -303,7 +334,7 @@ impl<'a> ReplaceFunctions<'a> {
     }
 }
 
-impl ir::VisitorMut for ReplaceFunctions<'_> {
+impl ir::VisitorMut for FunctionsReplacer<'_> {
     fn visit_function_id_mut(&mut self, function: &mut FunctionId) {
         if let Some(mapped_id) = self.fn_mapping.get(function) {
             *function = *mapped_id;
@@ -312,8 +343,64 @@ impl ir::VisitorMut for ReplaceFunctions<'_> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum GuardPlacement {
+    Correct,
+    Incorrect,
+}
+
+/// Visitor removing invocations of a certain function.
+struct GuardRemover {
+    guard_id: FunctionId,
+    entry_seq_id: ir::InstrSeqId,
+    placement: Option<GuardPlacement>,
+}
+
+impl GuardRemover {
+    fn new(guard_id: FunctionId, local_fn: &LocalFunction) -> Self {
+        Self {
+            guard_id,
+            entry_seq_id: local_fn.entry_block(),
+            placement: None,
+        }
+    }
+
+    fn add_placement(&mut self, placement: GuardPlacement) {
+        self.placement = cmp::max(self.placement, Some(placement));
+    }
+}
+
+impl ir::VisitorMut for GuardRemover {
+    fn start_instr_seq_mut(&mut self, instr_seq: &mut ir::InstrSeq) {
+        let is_entry_seq = instr_seq.id() == self.entry_seq_id;
+        let mut idx = 0;
+        instr_seq.instrs.retain(|(instr, _)| {
+            let placement = if let ir::Instr::Call(call) = instr {
+                if call.func == self.guard_id {
+                    Some(if is_entry_seq && idx == 0 {
+                        GuardPlacement::Correct
+                    } else {
+                        GuardPlacement::Incorrect
+                    })
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            if let Some(placement) = placement {
+                self.add_placement(placement);
+            }
+            idx += 1;
+            placement.is_none()
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
+
     use super::*;
 
     #[test]
@@ -357,7 +444,55 @@ mod tests {
 
         let fns = PatchedFunctions::new(&mut module, &imports, &Processor::default());
         assert_eq!(fns.fn_mapping.len(), 2);
-        let replaced_calls = fns.replace_calls(&mut module);
+        let (replaced_calls, guarded_fns) = fns.replace_calls(&mut module).unwrap();
         assert_eq!(replaced_calls, 2); // 1 insert + 1 get
+        assert!(guarded_fns.is_empty());
+    }
+
+    #[test]
+    fn guarded_functions() {
+        const MODULE_BYTES: &[u8] = br#"
+            (module
+                (import "externref" "guard" (func $guard))
+
+                (func (param $ref i32)
+                    (call $guard)
+                    (drop $ref)
+                )
+            )
+        "#;
+
+        let module = wat::parse_bytes(MODULE_BYTES).unwrap();
+        let mut module = Module::from_buffer(&module).unwrap();
+        let imports = ExternrefImports::new(&mut module.imports).unwrap();
+
+        let fns = PatchedFunctions::new(&mut module, &imports, &Processor::default());
+        let (_, guarded_fns) = fns.replace_calls(&mut module).unwrap();
+        assert_eq!(guarded_fns.len(), 1);
+    }
+
+    #[test]
+    fn incorrect_guard_placement() {
+        const MODULE_BYTES: &[u8] = br#"
+            (module
+                (import "externref" "guard" (func $guard))
+
+                (func $test (param $ref i32)
+                    (drop $ref)
+                    (call $guard)
+                )
+            )
+        "#;
+
+        let module = wat::parse_bytes(MODULE_BYTES).unwrap();
+        let mut module = Module::from_buffer(&module).unwrap();
+        let imports = ExternrefImports::new(&mut module.imports).unwrap();
+
+        let fns = PatchedFunctions::new(&mut module, &imports, &Processor::default());
+        let err = fns.replace_calls(&mut module).unwrap_err();
+        assert_matches!(
+            err,
+            Error::IncorrectGuard { function_name: Some(name) } if name == "test"
+        );
     }
 }

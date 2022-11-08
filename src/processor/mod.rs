@@ -18,6 +18,13 @@
 //!
 //! See [crate-level docs](..) for more insights on WASM module setup and processing.
 //!
+//! ⚠ **Warning.** The module should run *before* WASM optimization tools such as `wasm-opt`.
+//! These tools may inline `externref`-operating functions, which can lead to the processor
+//! producing invalid WASM code (roughly speaking, excessively replacing `i32`s with `externref`s).
+//! Running WASM optimization after the processor has an additional advantage in that it can
+//! optimize the changes produced by it; these may not be optimal on (optimization is hard, and is
+//! best left to the dedicated tools).
+//!
 //! # Examples
 //!
 //! ```
@@ -100,8 +107,8 @@ impl<'a> Processor<'a> {
         tracing::info!(functions.len = functions.len(), "parsed custom section");
 
         let state = ProcessingState::new(module, self)?;
-        state.replace_functions(module);
-        state.process_functions(&functions, module)?;
+        let guarded_fns = state.replace_functions(module)?;
+        state.process_functions(&functions, &guarded_fns, module)?;
 
         gc::run(module);
         Ok(())

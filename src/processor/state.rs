@@ -30,10 +30,11 @@ impl ProcessingState {
 
     #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
     #[cfg_attr(not(feature = "tracing"), allow(unused_variables))]
-    pub fn replace_functions(&self, module: &mut Module) {
-        let replaced_count = self.patched_fns.replace_calls(module);
+    pub fn replace_functions(&self, module: &mut Module) -> Result<HashSet<FunctionId>, Error> {
+        let (replaced_count, guarded_fns) = self.patched_fns.replace_calls(module)?;
         #[cfg(feature = "tracing")]
         tracing::info!(replaced_count, "replaced calls to externref imports");
+        Ok(guarded_fns)
     }
 
     #[cfg_attr(
@@ -43,6 +44,7 @@ impl ProcessingState {
     pub fn process_functions(
         &self,
         functions: &[Function<'_>],
+        guarded_fns: &HashSet<FunctionId>,
         module: &mut Module,
     ) -> Result<(), Error> {
         // First, resolve function IDs for exports / imports.
@@ -85,7 +87,8 @@ impl ProcessingState {
             if let Some(function) = functions_by_id.get(&fn_id) {
                 Self::transform_export(module, &functions_returning_ref, fn_id, function)?;
             } else {
-                Self::transform_local_fn(module, &functions_returning_ref, fn_id);
+                let can_have_locals = guarded_fns.contains(&fn_id);
+                Self::transform_local_fn(module, &functions_returning_ref, can_have_locals, fn_id)?;
             }
         }
 
@@ -220,14 +223,16 @@ impl ProcessingState {
     /// this process is combined with cloning function code.
     #[cfg_attr(
         feature = "tracing",
-        tracing::instrument(level = "trace", skip_all, fields(fn_id))
+        tracing::instrument(level = "trace", skip_all, err, fields(fn_id))
     )]
     fn transform_local_fn(
         module: &mut Module,
         functions_returning_ref: &HashSet<FunctionId>,
+        can_have_locals: bool,
         fn_id: FunctionId,
-    ) {
-        let local_fn = module.funcs.get_mut(fn_id).kind.unwrap_local_mut();
+    ) -> Result<(), Error> {
+        let function = module.funcs.get_mut(fn_id);
+        let local_fn = function.kind.unwrap_local_mut();
 
         let mut calls_visitor = RefCallDetector {
             locals: &mut module.locals,
@@ -239,7 +244,11 @@ impl ProcessingState {
         if new_locals.is_empty() {
             #[cfg(feature = "tracing")]
             tracing::trace!("no new locals; skipping function transform");
-            return;
+            return Ok(());
+        } else if !can_have_locals {
+            return Err(Error::UnexpectedCall {
+                function_name: function.name.clone(),
+            });
         }
 
         #[cfg(feature = "tracing")]
@@ -254,6 +263,7 @@ impl ProcessingState {
         ir::dfs_in_order(&mut locals_visitor, local_fn, local_fn.entry_block());
         let mut replacer = LocalReplacer::from(locals_visitor);
         ir::dfs_pre_order_mut(&mut replacer, local_fn, local_fn.entry_block());
+        Ok(())
     }
 }
 
@@ -638,7 +648,8 @@ mod tests {
             _ => unreachable!(),
         };
 
-        ProcessingState::transform_local_fn(&mut module, &functions_returning_ref, fn_id);
+        ProcessingState::transform_local_fn(&mut module, &functions_returning_ref, true, fn_id)
+            .unwrap();
 
         let ref_locals: Vec<_> = module
             .locals
