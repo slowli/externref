@@ -457,7 +457,7 @@ mod tests {
 
                 (func (param $ref i32)
                     (call $guard)
-                    (drop $ref)
+                    (drop (local.get $ref))
                 )
             )
         "#;
@@ -478,7 +478,7 @@ mod tests {
                 (import "externref" "guard" (func $guard))
 
                 (func $test (param $ref i32)
-                    (drop $ref)
+                    (drop (local.get $ref))
                     (call $guard)
                 )
             )
