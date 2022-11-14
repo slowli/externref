@@ -18,12 +18,18 @@
 //!
 //! See [crate-level docs](..) for more insights on WASM module setup and processing.
 //!
-//! ⚠ **Warning.** The module should run *before* WASM optimization tools such as `wasm-opt`.
+//! # On processing order
+//!
+//! ⚠ **Important.** The module should run *before* WASM optimization tools such as `wasm-opt`.
 //! These tools may inline `externref`-operating functions, which can lead to the processor
-//! producing invalid WASM code (roughly speaking, excessively replacing `i32`s with `externref`s).
-//! Running WASM optimization after the processor has an additional advantage in that it can
-//! optimize the changes produced by it; these may not be optimal on (optimization is hard, and is
-//! best left to the dedicated tools).
+//! producing invalid WASM bytecode (roughly speaking, excessively replacing `i32`s
+//! with `externref`s). Such inlining can usually be detected by the processor, in which case
+//! it will return [`Error::IncorrectGuard`] or [`Error::UnexpectedCall`]
+//! from [`process()`](Processor::process()).
+//!
+//! Optimizing WASM after the processor has an additional advantage in that it can
+//! optimize the changes produced by it (optimization is hard, and is best left
+//! to the dedicated tools).
 //!
 //! # Examples
 //!
