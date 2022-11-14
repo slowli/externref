@@ -174,6 +174,27 @@ pub use externref_macro::externref;
 #[repr(transparent)]
 pub struct ExternRef(usize);
 
+impl ExternRef {
+    /// Guard for imported function wrappers. The processor checks that each transformed function
+    /// has this guard as the first instruction.
+    ///
+    /// # Safety
+    ///
+    /// This guard should only be inserted by the `externref` macro.
+    #[inline(always)]
+    pub unsafe fn guard() {
+        #[cfg(target_arch = "wasm32")]
+        #[link(wasm_import_module = "externref")]
+        extern "C" {
+            #[link_name = "guard"]
+            fn guard();
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        guard();
+    }
+}
+
 /// Host resource exposed to WASM.
 ///
 /// Internally, a resource is just an index into the `externref`s table; thus, it is completely

@@ -51,6 +51,9 @@ externref = "0.1.0"
 3. Transform the generated WASM module with the module processor
   from the corresponding module of the crate.
 
+> **Important.** The processor should run before WASM optimization tools such as
+> `wasm-opt` from binaryen.
+
 ### Examples
 
 Using the `#[externref]` macro and `Resource`s in WASM-targeting code:

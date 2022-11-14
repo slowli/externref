@@ -20,6 +20,7 @@
   (import "externref" "insert" (func $insert_ref (param i32) (result i32)))
   (import "externref" "get" (func $get_ref (param i32) (result i32)))
   (import "externref" "drop" (func $drop_ref (param i32)))
+  (import "externref" "guard" (func $ref_guard))
   ;; real imported fn
   (import "arena" "alloc" (func $alloc (param i32 i32) (result i32)))
 
@@ -50,6 +51,7 @@
   ;; internal fn; the `ref` local should be transformed as well
   (func (param $index i32)
     (local $ref i32)
+    (call $ref_guard)
     (local.set $ref
       (call $get_ref (local.get $index))
     )

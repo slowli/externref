@@ -18,6 +18,19 @@
 //!
 //! See [crate-level docs](..) for more insights on WASM module setup and processing.
 //!
+//! # On processing order
+//!
+//! ⚠ **Important.** The module should run *before* WASM optimization tools such as `wasm-opt`.
+//! These tools may inline `externref`-operating functions, which can lead to the processor
+//! producing invalid WASM bytecode (roughly speaking, excessively replacing `i32`s
+//! with `externref`s). Such inlining can usually be detected by the processor, in which case
+//! it will return [`Error::IncorrectGuard`] or [`Error::UnexpectedCall`]
+//! from [`process()`](Processor::process()).
+//!
+//! Optimizing WASM after the processor has an additional advantage in that it can
+//! optimize the changes produced by it (optimization is hard, and is best left
+//! to the dedicated tools).
+//!
 //! # Examples
 //!
 //! ```
@@ -100,8 +113,8 @@ impl<'a> Processor<'a> {
         tracing::info!(functions.len = functions.len(), "parsed custom section");
 
         let state = ProcessingState::new(module, self)?;
-        state.replace_functions(module);
-        state.process_functions(&functions, module)?;
+        let guarded_fns = state.replace_functions(module)?;
+        state.process_functions(&functions, &guarded_fns, module)?;
 
         gc::run(module);
         Ok(())
