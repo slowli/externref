@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 externref = { version = "0.1.0", path = ".." }
 
 [dev-dependencies]
+anyhow = "1.0.66"
 assert_matches = "1.5.0"
 once_cell = "1.13.0"
 predicates = { version = "2.1.1", default-features = false }
