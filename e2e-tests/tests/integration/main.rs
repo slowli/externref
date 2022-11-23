@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Context};
 use assert_matches::assert_matches;
 use once_cell::sync::Lazy;
 use tracing::{subscriber::DefaultGuard, Level, Subscriber};
@@ -5,7 +6,7 @@ use tracing_capture::{CaptureLayer, SharedStorage, Storage};
 use tracing_subscriber::{
     fmt::format::FmtSpan, layer::SubscriberExt, registry::LookupSpan, FmtSubscriber,
 };
-use wasmtime::{Caller, Engine, Extern, ExternRef, Linker, Module, Store, Table, Trap, Val};
+use wasmtime::{Caller, Engine, Extern, ExternRef, Linker, Module, Store, Table, Val};
 
 use externref::FunctionKind;
 use std::{collections::HashSet, sync::Once};
@@ -88,36 +89,35 @@ fn send_message(
     resource: Option<ExternRef>,
     buffer_ptr: u32,
     buffer_len: u32,
-) -> Result<Option<ExternRef>, Trap> {
+) -> anyhow::Result<Option<ExternRef>> {
     let memory = ctx
         .get_export("memory")
         .and_then(Extern::into_memory)
-        .ok_or_else(|| Trap::new("module memory is not exposed"))?;
+        .ok_or_else(|| anyhow!("module memory is not exposed"))?;
 
     let mut buffer = vec![0_u8; buffer_len as usize];
     memory
         .read(&ctx, buffer_ptr as usize, &mut buffer)
-        .map_err(|err| Trap::new(format!("failed reading WASM memory: {}", err)))?;
-    let buffer = String::from_utf8(buffer)
-        .map_err(|err| Trap::new(format!("buffer is not utf-8: {}", err)))?;
+        .context("failed reading WASM memory")?;
+    let buffer = String::from_utf8(buffer).context("buffer is not utf-8")?;
 
-    let resource = resource.ok_or_else(|| Trap::new("null reference passed to host"))?;
+    let resource = resource.ok_or_else(|| anyhow!("null reference passed to host"))?;
     let sender = resource
         .data()
         .downcast_ref::<HostSender>()
-        .ok_or_else(|| Trap::new("passed reference has incorrect type"))?;
+        .ok_or_else(|| anyhow!("passed reference has incorrect type"))?;
     assert!(ctx.data().senders.contains(&sender.key));
 
     let bytes = Box::<str>::from(buffer);
     Ok(Some(ExternRef::new(bytes)))
 }
 
-fn message_len(resource: Option<ExternRef>) -> Result<u32, Trap> {
+fn message_len(resource: Option<ExternRef>) -> anyhow::Result<u32> {
     if let Some(resource) = resource {
         let str = resource
             .data()
             .downcast_ref::<Box<str>>()
-            .ok_or_else(|| Trap::new("passed reference has incorrect type"))?;
+            .ok_or_else(|| anyhow!("passed reference has incorrect type"))?;
         Ok(u32::try_from(str.len()).unwrap())
     } else {
         Ok(0)
