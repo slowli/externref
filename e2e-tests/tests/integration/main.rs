@@ -1,3 +1,5 @@
+//! End-to-end tests for the `externref` macro / processor.
+
 use anyhow::{anyhow, Context};
 use assert_matches::assert_matches;
 use once_cell::sync::Lazy;
@@ -8,10 +10,9 @@ use tracing_subscriber::{
 };
 use wasmtime::{Caller, Engine, Extern, ExternRef, Linker, Module, Store, Table, Val};
 
-use externref::FunctionKind;
 use std::{collections::HashSet, sync::Once};
 
-use externref::processor::Processor;
+use externref::{processor::Processor, FunctionKind};
 
 mod compile;
 
@@ -170,8 +171,7 @@ fn create_linker(engine: &Engine) -> Linker<Data> {
     linker
 }
 
-#[test]
-fn transform_after_optimization() {
+fn test_transform_after_optimization(test_export: &str) {
     let (_guard, storage) = enable_tracing_assertions();
 
     let module = Processor::default()
@@ -197,7 +197,7 @@ fn transform_after_optimization() {
     store.data_mut().externrefs = Some(externrefs);
 
     let exported_fn = instance
-        .get_typed_func::<Option<ExternRef>, (), _>(&mut store, "test_export")
+        .get_typed_func::<Option<ExternRef>, (), _>(&mut store, test_export)
         .unwrap();
     let sender = store.data_mut().push_sender("sender");
     exported_fn
@@ -216,6 +216,16 @@ fn transform_after_optimization() {
     }
 }
 
+#[test]
+fn transform_after_optimization() {
+    test_transform_after_optimization("test_export");
+}
+
+#[test]
+fn transform_after_optimization_with_casts() {
+    test_transform_after_optimization("test_export_with_casts");
+}
+
 fn assert_tracing_output(storage: &Storage) {
     use predicates::{
         ord::{eq, gt},
@@ -226,7 +236,7 @@ fn assert_tracing_output(storage: &Storage) {
     let spans = storage.scan_spans();
     let process_span = spans.single(&name(eq("process")));
     let matches =
-        level(Level::INFO) & message(eq("parsed custom section")) & field("functions.len", 4_u64);
+        level(Level::INFO) & message(eq("parsed custom section")) & field("functions.len", 5_u64);
     process_span.scan_events().single(&matches);
 
     let patch_imports_span = spans.single(&name(eq("patch_imports")));
@@ -274,7 +284,7 @@ fn assert_tracing_output(storage: &Storage) {
     let transformed_exports: HashSet<_> = transformed_exports.collect();
     assert_eq!(
         transformed_exports,
-        HashSet::from_iter(["test_export", "test_nulls"])
+        HashSet::from_iter(["test_export", "test_export_with_casts", "test_nulls"])
     );
 }
 
