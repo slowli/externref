@@ -150,7 +150,7 @@
     clippy::inline_always
 )]
 
-use core::marker::PhantomData;
+use core::{alloc::Layout, marker::PhantomData, mem};
 
 mod error;
 #[cfg(feature = "processor")]
@@ -201,6 +201,7 @@ impl ExternRef {
 /// valid to store `Resource`s on heap (in a `Vec`, thread-local storage, etc.). The type param
 /// can be used for type safety.
 #[derive(Debug)]
+#[repr(C)]
 pub struct Resource<T> {
     id: usize,
     _ty: PhantomData<fn(T)>,
@@ -272,6 +273,49 @@ impl<T> Resource<T> {
     #[allow(clippy::needless_pass_by_value)]
     pub unsafe fn take_raw(this: Option<Self>) -> ExternRef {
         Self::raw(this.as_ref())
+    }
+
+    /// Upcasts this resource to a generic resource.
+    pub fn upcast(self) -> Resource<()> {
+        Resource {
+            id: self.leak_id(),
+            _ty: PhantomData,
+        }
+    }
+
+    #[inline]
+    fn leak_id(self) -> usize {
+        let id = self.id;
+        mem::forget(self);
+        id
+    }
+
+    /// Upcasts a reference to this resource to a generic resource reference.
+    pub fn upcast_ref(&self) -> &Resource<()> {
+        debug_assert_eq!(Layout::new::<Self>(), Layout::new::<Resource<()>>());
+
+        let ptr = (self as *const Self).cast::<Resource<()>>();
+        unsafe {
+            // SAFETY: All resource types have identical alignment (thanks to `repr(C)`),
+            // hence, casting among them is safe.
+            &*ptr
+        }
+    }
+}
+
+impl Resource<()> {
+    /// Downcasts this generic resource to a specific type.
+    ///
+    /// # Safety
+    ///
+    /// No checks are performed that the resource actually encapsulates what is meant
+    /// by `Resource<T>`. It is up to the caller to check this beforehand (e.g., by calling
+    /// a WASM import taking `&Resource<()>` and returning an app-specific resource kind).
+    pub unsafe fn downcast_unchecked<T>(self) -> Resource<T> {
+        Resource {
+            id: self.leak_id(),
+            _ty: PhantomData,
+        }
     }
 }
 
