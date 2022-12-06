@@ -36,7 +36,13 @@
 //!   in a WASM module in place of `externref`s . Reference args (including mutable references)
 //!   and the `Option<_>` wrapper are supported as well.
 //! 2. Add the `#[externref]` proc macro on the imported / exported functions.
-//! 3. Post-process the generated WASM module with the [`processor`](crate::processor).
+//! 3. Post-process the generated WASM module with the [`processor`].
+//!
+//! `Resource`s support primitive downcasting and upcasting with `Resource<()>` signalling
+//! a generic resource. Downcasting is *unchecked*; it is up to the `Resource` users to
+//! define a way to check the resource kind dynamically if necessary. One possible approach
+//! for this is defining a WASM import `fn(&Resource<()>) -> Kind`, where `Kind` is the encoded
+//! kind of the supplied resource, such as `i32`.
 //!
 //! # How it works
 //!
@@ -83,13 +89,13 @@
 //!
 //! *(Off by default)*
 //!
-//! Enables WASM module processing via the [`processor`](crate::processor) module.
+//! Enables WASM module processing via the [`processor`] module.
 //!
 //! ## `tracing`
 //!
 //! *(Off by default)*
 //!
-//! Enables tracing during [module processing](crate::processor) with the [`tracing`] facade.
+//! Enables tracing during [module processing](processor) with the [`tracing`] facade.
 //! Tracing events / spans mostly use `INFO` and `DEBUG` levels.
 //!
 //! [`tracing`]: https://docs.rs/tracing/
