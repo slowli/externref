@@ -6,6 +6,11 @@ pub struct Sender(());
 
 pub struct Bytes(());
 
+// Emulate reexporting the crate.
+mod reexports {
+    pub use externref as anyref;
+}
+
 mod imports {
     use externref::Resource;
 
@@ -85,7 +90,7 @@ pub extern "C" fn test_export_with_casts(sender: Resource<()>) {
     inspect_refs();
 }
 
-#[externref]
+#[externref(crate = "crate::reexports::anyref")]
 pub extern "C" fn test_nulls(sender: Option<&Resource<Sender>>) {
     let message = "test";
     if let Some(sender) = sender {

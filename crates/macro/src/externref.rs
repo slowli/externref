@@ -1,15 +1,16 @@
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{
-    parse::{Error as SynError, Parse},
+    parse::{Error as SynError, Parse, ParseStream},
     spanned::Spanned,
     Attribute, Expr, FnArg, ForeignItem, GenericArgument, Ident, ItemFn, ItemForeignMod, Lit,
-    LitStr, Meta, MetaList, NestedMeta, PatType, PathArguments, Signature, Token, Type, TypePath,
-    Visibility,
+    LitStr, Meta, MetaList, NestedMeta, PatType, Path, PathArguments, Signature, Token, Type,
+    TypePath, Visibility,
 };
 
 use std::{collections::HashMap, mem};
-use syn::parse::ParseStream;
+
+use crate::ExternrefAttrs;
 
 fn check_abi(
     target_name: &str,
@@ -141,7 +142,7 @@ impl ResourceKind {
         }
     }
 
-    fn initialize_for_export(self, arg: &Ident) -> TokenStream {
+    fn initialize_for_export(self, arg: &Ident, cr: &Path) -> TokenStream {
         let method_call = match self.simple_kind() {
             SimpleResourceKind::Owned => None,
             SimpleResourceKind::Ref => Some(quote!(.as_ref())),
@@ -153,11 +154,11 @@ impl ResourceKind {
         };
 
         quote! {
-            externref::Resource::new(#arg) #method_call #unwrap
+            #cr::Resource::new(#arg) #method_call #unwrap
         }
     }
 
-    fn prepare_for_import(self, arg: &Ident) -> TokenStream {
+    fn prepare_for_import(self, arg: &Ident, cr: &Path) -> TokenStream {
         let arg = match self {
             Self::Simple(_) => quote!(core::option::Option::Some(#arg)),
             Self::Option(_) => quote!(#arg),
@@ -165,9 +166,9 @@ impl ResourceKind {
 
         match self.simple_kind() {
             SimpleResourceKind::Ref | SimpleResourceKind::MutRef => {
-                quote!(externref::Resource::raw(#arg))
+                quote!(#cr::Resource::raw(#arg))
             }
-            SimpleResourceKind::Owned => quote!(externref::Resource::take_raw(#arg)),
+            SimpleResourceKind::Owned => quote!(#cr::Resource::take_raw(#arg)),
         }
     }
 }
@@ -185,10 +186,11 @@ struct Function {
     arg_count: usize,
     resource_args: HashMap<usize, ResourceKind>,
     return_type: ReturnType,
+    crate_path: Path,
 }
 
 impl Function {
-    fn new(function: &ItemFn) -> Result<Self, SynError> {
+    fn new(function: &ItemFn, attrs: &ExternrefAttrs) -> Result<Self, SynError> {
         let abi_name = function.sig.abi.as_ref().and_then(|abi| abi.name.as_ref());
         check_abi("exported function", abi_name, &function.sig)?;
 
@@ -197,10 +199,10 @@ impl Function {
             return Err(SynError::new(variadic.span(), msg));
         }
         let export_name = attr_expr(&function.attrs, "export_name")?;
-        Ok(Self::from_sig(&function.sig, export_name))
+        Ok(Self::from_sig(&function.sig, export_name, attrs))
     }
 
-    fn from_sig(sig: &Signature, name_override: Option<Expr>) -> Self {
+    fn from_sig(sig: &Signature, name_override: Option<Expr>, attrs: &ExternrefAttrs) -> Self {
         let resource_args = sig.inputs.iter().enumerate().filter_map(|(i, arg)| {
             if let FnArg::Typed(PatType { ty, .. }) = arg {
                 return ResourceKind::from_type(ty).map(|kind| (i, kind));
@@ -223,6 +225,7 @@ impl Function {
             arg_count: sig.inputs.len(),
             resource_args: resource_args.collect(),
             return_type,
+            crate_path: attrs.crate_path(),
         }
     }
 
@@ -232,15 +235,16 @@ impl Function {
 
     fn declare(&self, module_name: Option<&str>) -> impl ToTokens {
         let name = &self.name;
+        let cr = &self.crate_path;
         let kind = if let Some(module_name) = module_name {
-            quote!(externref::FunctionKind::Import(#module_name))
+            quote!(#cr::FunctionKind::Import(#module_name))
         } else {
-            quote!(externref::FunctionKind::Export)
+            quote!(#cr::FunctionKind::Export)
         };
         let externrefs = self.create_externrefs();
 
         quote! {
-            externref::declare_function!(externref::Function {
+            #cr::declare_function!(#cr::Function {
                 kind: #kind,
                 name: #name,
                 externrefs: #externrefs,
@@ -249,6 +253,7 @@ impl Function {
     }
 
     fn wrap_export(&self, raw: &ItemFn, export_name: Option<Attribute>) -> impl ToTokens {
+        let cr = &self.crate_path;
         let export_name = export_name.unwrap_or_else(|| {
             let name = raw.sig.ident.to_string();
             syn::parse_quote!(#[export_name = #name])
@@ -265,8 +270,8 @@ impl Function {
                 typed_arg.pat = Box::new(syn::parse_quote!(#arg));
 
                 if let Some(kind) = self.resource_args.get(&i) {
-                    typed_arg.ty = Box::new(syn::parse_quote!(externref::ExternRef));
-                    args.push(kind.initialize_for_export(&arg));
+                    typed_arg.ty = Box::new(syn::parse_quote!(#cr::ExternRef));
+                    args.push(kind.initialize_for_export(&arg, cr));
                 } else {
                     args.push(quote!(#arg));
                 }
@@ -277,9 +282,9 @@ impl Function {
         let delegation = quote!(#original_name(#(#args,)*));
         let delegation = match self.return_type {
             ReturnType::Resource(kind) => {
-                export_sig.output = syn::parse_quote!(-> externref::ExternRef);
+                export_sig.output = syn::parse_quote!(-> #cr::ExternRef);
                 let output = Ident::new("__output", raw.sig.span());
-                let conversion = kind.prepare_for_import(&output);
+                let conversion = kind.prepare_for_import(&output, cr);
                 quote! {
                     let #output = #delegation;
                     #conversion
@@ -291,7 +296,6 @@ impl Function {
 
         quote! {
             const _: () = {
-                #[no_mangle]
                 #export_name
                 #export_sig {
                     #delegation
@@ -301,6 +305,7 @@ impl Function {
     }
 
     fn wrap_import(&self, vis: &Visibility, mut sig: Signature) -> (TokenStream, Ident) {
+        let cr = &self.crate_path;
         sig.unsafety = Some(syn::parse_quote!(unsafe));
         let new_ident = format!("__externref_{}", sig.ident);
         let new_ident = Ident::new(&new_ident, sig.ident.span());
@@ -312,7 +317,7 @@ impl Function {
                 typed_arg.pat = Box::new(syn::parse_quote!(#arg));
 
                 if let Some(kind) = self.resource_args.get(&i) {
-                    args.push(kind.prepare_for_import(&arg));
+                    args.push(kind.prepare_for_import(&arg, cr));
                 } else {
                     args.push(quote!(#arg));
                 }
@@ -323,7 +328,7 @@ impl Function {
         let delegation = match self.return_type {
             ReturnType::Resource(kind) => {
                 let output = Ident::new("__output", sig.span());
-                let init = kind.initialize_for_export(&output);
+                let init = kind.initialize_for_export(&output, cr);
                 quote! {
                     let #output = #delegation;
                     #init
@@ -336,7 +341,7 @@ impl Function {
         let wrapper = quote! {
             #[inline(never)]
             #vis #sig {
-                unsafe { externref::ExternRef::guard(); }
+                unsafe { #cr::ExternRef::guard(); }
                 #delegation
             }
         };
@@ -344,6 +349,7 @@ impl Function {
     }
 
     fn create_externrefs(&self) -> impl ToTokens {
+        let cr = &self.crate_path;
         let args_and_return_type_count = if matches!(self.return_type, ReturnType::Default) {
             self.arg_count
         } else {
@@ -368,15 +374,15 @@ impl Function {
         let set_bits = set_bits.map(|idx| quote!(.with_set_bit(#idx)));
 
         quote! {
-            externref::BitSlice::builder::<#bytes>(#args_and_return_type_count)
+            #cr::BitSlice::builder::<#bytes>(#args_and_return_type_count)
                 #(#set_bits)*
                 .build()
         }
     }
 }
 
-pub(crate) fn for_export(function: &mut ItemFn) -> TokenStream {
-    let parsed_function = match Function::new(function) {
+pub(crate) fn for_export(function: &mut ItemFn, attrs: &ExternrefAttrs) -> TokenStream {
+    let parsed_function = match Function::new(function, attrs) {
         Ok(function) => function,
         Err(err) => return err.into_compile_error(),
     };
@@ -391,6 +397,12 @@ pub(crate) fn for_export(function: &mut ItemFn) -> TokenStream {
             }
         });
         let export_name_attr = attr_idx.map(|idx| function.attrs.remove(idx));
+
+        // Remove `#[no_mangle]` attr if present as well; if it is retained, it will still
+        // generate an export.
+        function
+            .attrs
+            .retain(|attr| !attr.path.is_ident("no_mangle"));
 
         let export = parsed_function.wrap_export(function, export_name_attr);
         (Some(parsed_function.declare(None)), Some(export))
@@ -412,7 +424,7 @@ struct Imports {
 }
 
 impl Imports {
-    fn new(module: &mut ItemForeignMod) -> Result<Self, SynError> {
+    fn new(module: &mut ItemForeignMod, attrs: &ExternrefAttrs) -> Result<Self, SynError> {
         const NO_ATTR_MSG: &str = "#[link(wasm_import_module = \"..\")] must be specified \
             on the foreign module";
 
@@ -447,12 +459,13 @@ impl Imports {
             return Err(SynError::new(module_name.span(), msg));
         };
 
+        let cr = attrs.crate_path();
         let mut functions = Vec::with_capacity(module.items.len());
         for item in &mut module.items {
             if let ForeignItem::Fn(fn_item) = item {
                 let link_name = attr_expr(&fn_item.attrs, "link_name")?;
                 let has_link_name = link_name.is_some();
-                let function = Function::from_sig(&fn_item.sig, link_name);
+                let function = Function::from_sig(&fn_item.sig, link_name, attrs);
                 if !function.needs_declaring() {
                     continue;
                 }
@@ -470,12 +483,12 @@ impl Imports {
                 for (i, arg) in fn_item.sig.inputs.iter_mut().enumerate() {
                     if function.resource_args.contains_key(&i) {
                         if let FnArg::Typed(typed_arg) = arg {
-                            typed_arg.ty = Box::new(syn::parse_quote!(externref::ExternRef));
+                            typed_arg.ty = Box::new(syn::parse_quote!(#cr::ExternRef));
                         }
                     }
                 }
                 if matches!(function.return_type, ReturnType::Resource(_)) {
-                    fn_item.sig.output = syn::parse_quote!(-> externref::ExternRef);
+                    fn_item.sig.output = syn::parse_quote!(-> #cr::ExternRef);
                 }
 
                 functions.push((function, wrapper));
@@ -502,8 +515,11 @@ impl Imports {
     }
 }
 
-pub(crate) fn for_foreign_module(module: &mut ItemForeignMod) -> TokenStream {
-    let parsed_module = match Imports::new(module) {
+pub(crate) fn for_foreign_module(
+    module: &mut ItemForeignMod,
+    attrs: &ExternrefAttrs,
+) -> TokenStream {
+    let parsed_module = match Imports::new(module, attrs) {
         Ok(module) => module,
         Err(err) => return err.into_compile_error(),
     };
@@ -531,7 +547,7 @@ mod tests {
                 // does nothing
             }
         };
-        let parsed = Function::new(&export_fn).unwrap();
+        let parsed = Function::new(&export_fn, &ExternrefAttrs::default()).unwrap();
         assert!(parsed.needs_declaring());
 
         let declaration = parsed.declare(None);
@@ -560,7 +576,7 @@ mod tests {
                 // does nothing
             }
         };
-        let parsed = Function::new(&export_fn).unwrap();
+        let parsed = Function::new(&export_fn, &ExternrefAttrs::default()).unwrap();
         assert_eq!(parsed.resource_args.len(), 2);
         assert_eq!(parsed.resource_args[&0], SimpleResourceKind::MutRef.into());
         assert_eq!(
@@ -573,7 +589,6 @@ mod tests {
         let wrapper: syn::Item = syn::parse_quote!(#wrapper);
         let expected: syn::Item = syn::parse_quote! {
             const _: () = {
-                #[no_mangle]
                 #[export_name = "test_export"]
                 unsafe extern "C" fn __externref_export(
                     __arg0: externref::ExternRef,
@@ -602,7 +617,7 @@ mod tests {
                 message_len: usize,
             ) -> Resource<Bytes>
         };
-        let parsed = Function::from_sig(&sig, None);
+        let parsed = Function::from_sig(&sig, None, &ExternrefAttrs::default());
 
         let (wrapper, ident) = parsed.wrap_import(&Visibility::Inherited, sig);
         assert_eq!(ident, "__externref_send_message");
@@ -639,7 +654,7 @@ mod tests {
                 ) -> Resource<Bytes>;
             }
         };
-        Imports::new(&mut foreign_mod).unwrap();
+        Imports::new(&mut foreign_mod, &ExternrefAttrs::default()).unwrap();
 
         let expected: ItemForeignMod = syn::parse_quote! {
             #[link(wasm_import_module = "test")]
