@@ -1,12 +1,15 @@
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{
-    parse::Error as SynError, spanned::Spanned, Attribute, FnArg, ForeignItem, GenericArgument,
-    Ident, ItemFn, ItemForeignMod, Lit, LitStr, Meta, MetaList, NestedMeta, PatType, PathArguments,
-    Signature, Type, TypePath, Visibility,
+    parse::{Error as SynError, Parse},
+    spanned::Spanned,
+    Attribute, Expr, FnArg, ForeignItem, GenericArgument, Ident, ItemFn, ItemForeignMod, Lit,
+    LitStr, Meta, MetaList, NestedMeta, PatType, PathArguments, Signature, Token, Type, TypePath,
+    Visibility,
 };
 
 use std::{collections::HashMap, mem};
+use syn::parse::ParseStream;
 
 fn check_abi(
     target_name: &str,
@@ -27,7 +30,22 @@ fn check_abi(
     Ok(())
 }
 
-fn attr_string(attrs: &[Attribute], name: &str) -> Result<Option<String>, SynError> {
+#[derive(Debug)]
+struct AttrExpr {
+    _eq_token: Token![=],
+    expr: Expr,
+}
+
+impl Parse for AttrExpr {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        Ok(Self {
+            _eq_token: input.parse()?,
+            expr: input.parse()?,
+        })
+    }
+}
+
+fn attr_expr(attrs: &[Attribute], name: &str) -> Result<Option<Expr>, SynError> {
     let attr = attrs.iter().find(|attr| attr.path.is_ident(name));
     let attr = if let Some(attr) = attr {
         attr
@@ -35,21 +53,8 @@ fn attr_string(attrs: &[Attribute], name: &str) -> Result<Option<String>, SynErr
         return Ok(None);
     };
 
-    let attr_value = if let Meta::NameValue(nv) = attr.parse_meta()? {
-        nv.lit
-    } else {
-        let msg = format!(
-            "Unexpected `{}` attribute format; expected a name-value pair",
-            name
-        );
-        return Err(SynError::new_spanned(attr, msg));
-    };
-    if let Lit::Str(str) = attr_value {
-        Ok(Some(str.value()))
-    } else {
-        let msg = format!("Unexpected `{}` value; expected a string", name);
-        Err(SynError::new_spanned(attr, msg))
-    }
+    let AttrExpr { expr, .. } = syn::parse2(attr.tokens.clone())?;
+    Ok(Some(expr))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -176,7 +181,7 @@ enum ReturnType {
 
 #[derive(Debug)]
 struct Function {
-    name: String,
+    name: Expr,
     arg_count: usize,
     resource_args: HashMap<usize, ResourceKind>,
     return_type: ReturnType,
@@ -191,11 +196,11 @@ impl Function {
             let msg = "Variadic functions are not supported";
             return Err(SynError::new(variadic.span(), msg));
         }
-        let export_name = attr_string(&function.attrs, "export_name")?;
+        let export_name = attr_expr(&function.attrs, "export_name")?;
         Ok(Self::from_sig(&function.sig, export_name))
     }
 
-    fn from_sig(sig: &Signature, name_override: Option<String>) -> Self {
+    fn from_sig(sig: &Signature, name_override: Option<Expr>) -> Self {
         let resource_args = sig.inputs.iter().enumerate().filter_map(|(i, arg)| {
             if let FnArg::Typed(PatType { ty, .. }) = arg {
                 return ResourceKind::from_type(ty).map(|kind| (i, kind));
@@ -208,9 +213,13 @@ impl Function {
             }
             syn::ReturnType::Default => ReturnType::Default,
         };
+        let name = name_override.unwrap_or_else(|| {
+            let str = sig.ident.to_string();
+            syn::parse_quote!(#str)
+        });
 
         Self {
-            name: name_override.unwrap_or_else(|| sig.ident.to_string()),
+            name,
             arg_count: sig.inputs.len(),
             resource_args: resource_args.collect(),
             return_type,
@@ -441,7 +450,7 @@ impl Imports {
         let mut functions = Vec::with_capacity(module.items.len());
         for item in &mut module.items {
             if let ForeignItem::Fn(fn_item) = item {
-                let link_name = attr_string(&fn_item.attrs, "link_name")?;
+                let link_name = attr_expr(&fn_item.attrs, "link_name")?;
                 let has_link_name = link_name.is_some();
                 let function = Function::from_sig(&fn_item.sig, link_name);
                 if !function.needs_declaring() {

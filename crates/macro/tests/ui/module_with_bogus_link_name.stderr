@@ -1,11 +1,11 @@
-error: Unexpected `link_name` attribute format; expected a name-value pair
- --> tests/ui/module_with_bogus_link_name.rs:6:5
+error: expected `=`
+ --> tests/ui/module_with_bogus_link_name.rs:6:16
   |
 6 |     #[link_name("huh")]
-  |     ^^^^^^^^^^^^^^^^^^^
+  |                ^
 
-error: Unexpected `link_name` value; expected a string
+error: malformed `link_name` attribute input
   --> tests/ui/module_with_bogus_link_name.rs:13:5
    |
 13 |     #[link_name = 3]
-   |     ^^^^^^^^^^^^^^^^
+   |     ^^^^^^^^^^^^^^^^ help: must be of the form: `#[link_name = "name"]`

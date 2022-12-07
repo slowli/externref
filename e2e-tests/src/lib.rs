@@ -66,6 +66,8 @@ pub extern "C" fn test_export(sender: Resource<Sender>) {
     inspect_refs();
 }
 
+#[export_name = concat!("test_export_", stringify!(with_casts))]
+// ^ tests manually specified name with a complex expression
 #[externref]
 pub extern "C" fn test_export_with_casts(sender: Resource<()>) {
     let sender = unsafe { sender.downcast_unchecked() };
