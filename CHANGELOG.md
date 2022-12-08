@@ -5,6 +5,16 @@ The project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+- Support upcasting and downcasting of `Resource`s.
+- Support expressions in `link_name` / `export_name` attributes, such as 
+  `#[export_name = concat("prefix_", stringify!($name))]` for use in macros (`$name`
+  is a macro variable). Previously, only string literals were supported.
+- Support re-exporting the crate by adding an optional `crate` parameter
+  to the `#[externref]` attribute, e.g. `#[externref(crate = "other_crate::_externref")]`
+  where `other_crate` defines `pub use externref as _externref`.
+
 ### Fixed
 
 - Fix an incorrect conditional compilation attribute for a tracing event
