@@ -373,10 +373,11 @@ impl ir::VisitorMut for GuardRemover {
     fn start_instr_seq_mut(&mut self, instr_seq: &mut ir::InstrSeq) {
         let is_entry_seq = instr_seq.id() == self.entry_seq_id;
         let mut idx = 0;
+        let mut maybe_set_stack_ptr = false;
         instr_seq.instrs.retain(|(instr, location)| {
             let placement = if let ir::Instr::Call(call) = instr {
                 if call.func == self.guard_id {
-                    Some(if is_entry_seq && idx == 0 {
+                    Some(if is_entry_seq && (idx == 0 || maybe_set_stack_ptr) {
                         GuardPlacement::Correct
                     } else {
                         GuardPlacement::Incorrect(get_offset(*location))
@@ -387,10 +388,12 @@ impl ir::VisitorMut for GuardRemover {
             } else {
                 None
             };
+
             if let Some(placement) = placement {
                 self.add_placement(placement);
             }
             idx += 1;
+            maybe_set_stack_ptr = matches!(instr, ir::Instr::GlobalSet(_));
             placement.is_none()
         });
     }
@@ -464,6 +467,35 @@ mod tests {
                 (import "externref" "guard" (func $guard))
 
                 (func (param $ref i32)
+                    (call $guard)
+                    (drop (local.get $ref))
+                )
+            )
+        "#;
+
+        let module = wat::parse_bytes(MODULE_BYTES).unwrap();
+        let mut module = Module::from_buffer(&module).unwrap();
+        let imports = ExternrefImports::new(&mut module.imports).unwrap();
+
+        let fns = PatchedFunctions::new(&mut module, &imports, &Processor::default());
+        let (_, guarded_fns) = fns.replace_calls(&mut module).unwrap();
+        assert_eq!(guarded_fns.len(), 1);
+    }
+
+    #[test]
+    fn guarded_function_manipulating_stack() {
+        const MODULE_BYTES: &[u8] = br#"
+            (module
+                (import "externref" "guard" (func $guard))
+                (global $__stack_pointer (mut i32) (i32.const 32768))
+
+                (func (param $ref i32)
+                    (local $0 i32)
+                    (global.set $__stack_pointer
+                        (local.tee $0
+                            (i32.sub (global.get $__stack_pointer) (i32.const 16))
+                        )
+                    )
                     (call $guard)
                     (drop (local.get $ref))
                 )
