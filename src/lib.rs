@@ -36,7 +36,13 @@
 //!   in a WASM module in place of `externref`s . Reference args (including mutable references)
 //!   and the `Option<_>` wrapper are supported as well.
 //! 2. Add the `#[externref]` proc macro on the imported / exported functions.
-//! 3. Post-process the generated WASM module with the [`processor`](crate::processor).
+//! 3. Post-process the generated WASM module with the [`processor`].
+//!
+//! `Resource`s support primitive downcasting and upcasting with `Resource<()>` signalling
+//! a generic resource. Downcasting is *unchecked*; it is up to the `Resource` users to
+//! define a way to check the resource kind dynamically if necessary. One possible approach
+//! for this is defining a WASM import `fn(&Resource<()>) -> Kind`, where `Kind` is the encoded
+//! kind of the supplied resource, such as `i32`.
 //!
 //! # How it works
 //!
@@ -83,13 +89,13 @@
 //!
 //! *(Off by default)*
 //!
-//! Enables WASM module processing via the [`processor`](crate::processor) module.
+//! Enables WASM module processing via the [`processor`] module.
 //!
 //! ## `tracing`
 //!
 //! *(Off by default)*
 //!
-//! Enables tracing during [module processing](crate::processor) with the [`tracing`] facade.
+//! Enables tracing during [module processing](processor) with the [`tracing`] facade.
 //! Tracing events / spans mostly use `INFO` and `DEBUG` levels.
 //!
 //! [`tracing`]: https://docs.rs/tracing/
@@ -150,7 +156,7 @@
     clippy::inline_always
 )]
 
-use core::marker::PhantomData;
+use core::{alloc::Layout, marker::PhantomData, mem};
 
 mod error;
 #[cfg(feature = "processor")]
@@ -201,6 +207,7 @@ impl ExternRef {
 /// valid to store `Resource`s on heap (in a `Vec`, thread-local storage, etc.). The type param
 /// can be used for type safety.
 #[derive(Debug)]
+#[repr(C)]
 pub struct Resource<T> {
     id: usize,
     _ty: PhantomData<fn(T)>,
@@ -272,6 +279,49 @@ impl<T> Resource<T> {
     #[allow(clippy::needless_pass_by_value)]
     pub unsafe fn take_raw(this: Option<Self>) -> ExternRef {
         Self::raw(this.as_ref())
+    }
+
+    /// Upcasts this resource to a generic resource.
+    pub fn upcast(self) -> Resource<()> {
+        Resource {
+            id: self.leak_id(),
+            _ty: PhantomData,
+        }
+    }
+
+    #[inline]
+    fn leak_id(self) -> usize {
+        let id = self.id;
+        mem::forget(self);
+        id
+    }
+
+    /// Upcasts a reference to this resource to a generic resource reference.
+    pub fn upcast_ref(&self) -> &Resource<()> {
+        debug_assert_eq!(Layout::new::<Self>(), Layout::new::<Resource<()>>());
+
+        let ptr = (self as *const Self).cast::<Resource<()>>();
+        unsafe {
+            // SAFETY: All resource types have identical alignment (thanks to `repr(C)`),
+            // hence, casting among them is safe.
+            &*ptr
+        }
+    }
+}
+
+impl Resource<()> {
+    /// Downcasts this generic resource to a specific type.
+    ///
+    /// # Safety
+    ///
+    /// No checks are performed that the resource actually encapsulates what is meant
+    /// by `Resource<T>`. It is up to the caller to check this beforehand (e.g., by calling
+    /// a WASM import taking `&Resource<()>` and returning an app-specific resource kind).
+    pub unsafe fn downcast_unchecked<T>(self) -> Resource<T> {
+        Resource {
+            id: self.leak_id(),
+            _ty: PhantomData,
+        }
     }
 }
 

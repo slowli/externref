@@ -6,6 +6,11 @@ pub struct Sender(());
 
 pub struct Bytes(());
 
+// Emulate reexporting the crate.
+mod reexports {
+    pub use externref as anyref;
+}
+
 mod imports {
     use externref::Resource;
 
@@ -66,7 +71,26 @@ pub extern "C" fn test_export(sender: Resource<Sender>) {
     inspect_refs();
 }
 
+#[export_name = concat!("test_export_", stringify!(with_casts))]
+// ^ tests manually specified name with a complex expression
 #[externref]
+pub extern "C" fn test_export_with_casts(sender: Resource<()>) {
+    let sender = unsafe { sender.downcast_unchecked() };
+    let messages = ["test", "42", "some other string"]
+        .into_iter()
+        .map(|message| {
+            inspect_refs();
+            unsafe { imports::send_message(&sender, message.as_ptr(), message.len()) }.upcast()
+        });
+    let mut messages: Vec<_> = messages.collect();
+    inspect_refs();
+    messages.swap_remove(0);
+    inspect_refs();
+    drop(messages);
+    inspect_refs();
+}
+
+#[externref(crate = "crate::reexports::anyref")]
 pub extern "C" fn test_nulls(sender: Option<&Resource<Sender>>) {
     let message = "test";
     if let Some(sender) = sender {
