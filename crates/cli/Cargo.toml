@@ -1,0 +1,34 @@
+[package]
+name = "externref-cli"
+version = "0.1.0"
+authors = ["Alex Ostrovski <ostrovski.alex@gmail.com>"]
+edition = "2021"
+rust-version = "1.60"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+keywords = ["externref", "anyref", "wasm"]
+categories = ["command-line-utilities", "wasm", "development-tools::ffi"]
+description = "CLI for `externref` providing WASM module processing"
+repository = "https://github.com/slowli/externref"
+
+[[bin]]
+name = "externref"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.66"
+structopt = { version = "0.3.21", features = ["wrap_help"] }
+tracing-subscriber = { version = "0.3.16", features = ["env-filter"], optional = true }
+
+externref = { version = "0.1.0", path = "../..", features = ["processor"] }
+
+[dev-dependencies]
+term-transcript = { version = "0.2.0", features = ["portable-pty"] }
+
+[features]
+default = ["tracing"]
+# Enables tracing output during program execution.
+tracing = ["tracing-subscriber", "externref/tracing"]
+
+[workspace]
+# Separate workspace since we need a lockfile
