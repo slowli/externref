@@ -8,7 +8,8 @@ on:
 
 env:
   msrv: 1.60.0
-  nightly: nightly-2022-05-21
+  nightly: nightly-2022-09-22
+  binaryen: version_110
 
 jobs:
   build-msrv:
@@ -35,6 +36,11 @@ jobs:
         with:
           command: test
           args: -p externref -p externref-macro --all-features --all-targets
+      - name: Run CLI tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --manifest-path=crates/cli/Cargo.toml --all-features --all-targets
       - name: Run doc tests
         uses: actions-rs/cargo@v1
         with:
@@ -62,15 +68,21 @@ jobs:
           components: rustfmt, clippy
       - name: Install wasm-opt
         run: |
-          wget -q -O binaryen.tar.gz https://github.com/WebAssembly/binaryen/releases/download/version_108/binaryen-version_108-x86_64-linux.tar.gz && \
+          wget -q -O binaryen.tar.gz https://github.com/WebAssembly/binaryen/releases/download/$binaryen/binaryen-$binaryen-x86_64-linux.tar.gz && \
           tar xf binaryen.tar.gz && \
-          sudo install binaryen-version_108/bin/wasm-opt /usr/local/bin
+          sudo install "binaryen-$binaryen/bin/wasm-opt" /usr/local/bin
 
       - name: Format
         uses: actions-rs/cargo@v1
         with:
           command: fmt
           args: --all -- --check
+      - name: Format CLI
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --manifest-path=crates/cli/Cargo.toml -- --check
+
       - name: Clippy
         uses: actions-rs/clippy-check@v1
         with:
@@ -89,6 +101,12 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           name: "Clippy: features=processor"
           args: -p externref --no-default-features --features=processor --lib -- -D warnings
+      - name: Clippy CLI
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: "Clippy: CLI"
+          args: --manifest-path=crates/cli/Cargo.toml --all-features --all-targets -- -D warnings
 
       # Build the E2E crate first to speed up its testing.
       - name: Build E2E test crate
@@ -102,6 +120,11 @@ jobs:
         with:
           command: test
           args: --workspace --all-features --all-targets
+      - name: Run CLI tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --manifest-path=crates/cli/Cargo.toml --all-features --all-targets
       - name: Run doc tests
         uses: actions-rs/cargo@v1
         with:
