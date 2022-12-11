@@ -12,7 +12,7 @@ use wasmtime::{Caller, Engine, Extern, ExternRef, Linker, Module, Store, Table, 
 
 use std::{collections::HashSet, sync::Once};
 
-use externref::{processor::Processor, FunctionKind};
+use externref::processor::Processor;
 
 mod compile;
 
@@ -261,9 +261,9 @@ fn assert_tracing_output(storage: &Storage) {
     replace_functions_span.scan_events().single(&matches);
 
     let transformed_imports = storage.all_spans().filter_map(|span| {
-        if span.metadata().name() == "transform_imported_fn" {
-            assert!(span["function.kind"].is_debug(&FunctionKind::Import("test")));
-            span.value("function.name")?.as_str()
+        if span.metadata().name() == "transform_import" {
+            assert_eq!(span["module"].as_str(), Some("test"));
+            span.value("name")?.as_str()
         } else {
             None
         }
@@ -276,7 +276,7 @@ fn assert_tracing_output(storage: &Storage) {
 
     let transformed_exports = storage.all_spans().filter_map(|span| {
         if span.metadata().name() == "transform_export" {
-            span.value("function.name")?.as_str()
+            span.value("name")?.as_str()
         } else {
             None
         }

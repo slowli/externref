@@ -37,10 +37,7 @@ impl ProcessingState {
         Ok(guarded_fns)
     }
 
-    #[cfg_attr(
-        feature = "tracing",
-        tracing::instrument(skip_all, fields(functions.len = functions.len()))
-    )]
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
     pub fn process_functions(
         &self,
         functions: &[Function<'_>],
@@ -71,7 +68,7 @@ impl ProcessingState {
                 }
 
                 if let FunctionKind::Import(_) = function.kind {
-                    transform_imported_fn(module, function, fn_id)?;
+                    transform_import(module, function, fn_id)?;
                 }
             }
         }
@@ -101,7 +98,7 @@ impl ProcessingState {
             level = "trace",
             skip_all,
             ret, err,
-            fields(function.kind = ?function.kind, function.name = function.name)
+            fields(kind = ?function.kind, name = function.name)
         )
     )]
     fn function_id(function: &Function<'_>, module: &Module) -> Result<Option<FunctionId>, Error> {
@@ -142,7 +139,7 @@ impl ProcessingState {
 
     #[cfg_attr(
         feature = "tracing",
-        tracing::instrument(level = "debug", skip_all, err, fields(function.name = function.name))
+        tracing::instrument(skip_all, err, fields(name = function.name))
     )]
     #[allow(clippy::needless_collect)] // false positive
     fn transform_export(
@@ -526,13 +523,12 @@ impl ir::Visitor<'_> for FunctionCloner {
 #[cfg_attr(
     feature = "tracing",
     tracing::instrument(
-        level = "debug",
         skip_all,
         err,
-        fields(function.kind = ?function.kind, function.name = function.name)
+        fields(module = fn_module(&function.kind), name = function.name)
     )
 )]
-fn transform_imported_fn(
+fn transform_import(
     module: &mut Module,
     function: &Function<'_>,
     fn_id: FunctionId,
@@ -592,7 +588,7 @@ fn patch_type_inner(
     }
 
     #[cfg(feature = "tracing")]
-    tracing::debug!(
+    tracing::info!(
         ?params,
         ?results,
         ?new_params,
