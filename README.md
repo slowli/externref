@@ -45,11 +45,14 @@ externref = "0.1.0"
 ```
 
 1. Use `Resource`s as arguments / return results for imported and/or exported functions
-  in a WASM module in place of `externref`s . Reference args (including mutable references)
+  in a WASM module in place of `externref`s. Reference args (including mutable references)
   and the `Option<_>` wrapper are supported as well.
 2. Add the `#[externref]` proc macro on the imported / exported functions.
 3. Transform the generated WASM module with the module processor
   from the corresponding module of the crate.
+
+As an alternative for the final step, there is a [CLI app](crates/cli)
+that can process WASM modules with slightly less fine-grained control.
 
 > **Important.** The processor should run before WASM optimization tools such as
 > `wasm-opt` from binaryen.

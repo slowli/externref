@@ -20,7 +20,7 @@
 //!
 //! # On processing order
 //!
-//! ⚠ **Important.** The module should run *before* WASM optimization tools such as `wasm-opt`.
+//! ⚠ **Important.** The [`Processor`] should run *before* WASM optimization tools such as `wasm-opt`.
 //! These tools may inline `externref`-operating functions, which can lead to the processor
 //! producing invalid WASM bytecode (roughly speaking, excessively replacing `i32`s
 //! with `externref`s). Such inlining can usually be detected by the processor, in which case
