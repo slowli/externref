@@ -178,7 +178,7 @@ fn test_transform_after_optimization(test_export: &str) {
         .set_drop_fn("test", "drop_ref")
         .process_bytes(&OPTIMIZED_MODULE)
         .unwrap();
-    let module = Module::new(&Engine::default(), &module).unwrap();
+    let module = Module::new(&Engine::default(), module).unwrap();
     let linker = create_linker(module.engine());
 
     assert_tracing_output(&storage.lock());
@@ -197,7 +197,7 @@ fn test_transform_after_optimization(test_export: &str) {
     store.data_mut().externrefs = Some(externrefs);
 
     let exported_fn = instance
-        .get_typed_func::<Option<ExternRef>, (), _>(&mut store, test_export)
+        .get_typed_func::<Option<ExternRef>, ()>(&mut store, test_export)
         .unwrap();
     let sender = store.data_mut().push_sender("sender");
     exported_fn
@@ -295,13 +295,13 @@ fn null_references() {
     let module = Processor::default()
         .process_bytes(&OPTIMIZED_MODULE)
         .unwrap();
-    let module = Module::new(&Engine::default(), &module).unwrap();
+    let module = Module::new(&Engine::default(), module).unwrap();
     let linker = create_linker(module.engine());
     let mut store = Store::new(module.engine(), Data::new(vec![]));
     let instance = linker.instantiate(&mut store, &module).unwrap();
 
     let test_fn = instance
-        .get_typed_func::<Option<ExternRef>, (), _>(&mut store, "test_nulls")
+        .get_typed_func::<Option<ExternRef>, ()>(&mut store, "test_nulls")
         .unwrap();
     let sender = store.data_mut().push_sender("sender");
     test_fn

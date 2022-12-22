@@ -196,7 +196,7 @@ impl Function {
 
         if let Some(variadic) = &function.sig.variadic {
             let msg = "Variadic functions are not supported";
-            return Err(SynError::new(variadic.span(), msg));
+            return Err(SynError::new_spanned(variadic, msg));
         }
         let export_name = attr_expr(&function.attrs, "export_name")?;
         Ok(Self::from_sig(&function.sig, export_name, attrs))
