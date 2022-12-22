@@ -266,7 +266,7 @@ impl Function {
         let mut args = Vec::with_capacity(export_sig.inputs.len());
         for (i, arg) in export_sig.inputs.iter_mut().enumerate() {
             if let FnArg::Typed(typed_arg) = arg {
-                let arg = Ident::new(&format!("__arg{}", i), typed_arg.pat.span());
+                let arg = Ident::new(&format!("__arg{i}"), typed_arg.pat.span());
                 typed_arg.pat = Box::new(syn::parse_quote!(#arg));
 
                 if let Some(kind) = self.resource_args.get(&i) {
@@ -313,7 +313,7 @@ impl Function {
         let mut args = Vec::with_capacity(sig.inputs.len());
         for (i, arg) in sig.inputs.iter_mut().enumerate() {
             if let FnArg::Typed(typed_arg) = arg {
-                let arg = Ident::new(&format!("__arg{}", i), typed_arg.pat.span());
+                let arg = Ident::new(&format!("__arg{i}"), typed_arg.pat.span());
                 typed_arg.pat = Box::new(syn::parse_quote!(#arg));
 
                 if let Some(kind) = self.resource_args.get(&i) {

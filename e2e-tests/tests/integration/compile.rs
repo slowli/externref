@@ -29,7 +29,7 @@ fn wasm_target_dir(target_dir: PathBuf) -> PathBuf {
 }
 
 fn compile_wasm() -> PathBuf {
-    let profile = format!("--profile={}", WASM_PROFILE);
+    let profile = format!("--profile={WASM_PROFILE}");
     let mut command = Command::new("cargo");
     command.args([
         "build",
@@ -46,8 +46,7 @@ fn compile_wasm() -> PathBuf {
     let exit_status = command.wait().expect("failed waiting for cargo");
     assert!(
         exit_status.success(),
-        "Compiling WASM module finished abnormally: {}",
-        exit_status
+        "Compiling WASM module finished abnormally: {exit_status}"
     );
 
     let wasm_dir = wasm_target_dir(target_dir());
@@ -71,8 +70,7 @@ fn optimize_wasm(wasm_file: &Path) -> PathBuf {
     let exit_status = command.wait().expect("failed waiting for wasm-opt");
     assert!(
         exit_status.success(),
-        "Optimizing WASM module finished abnormally: {}",
-        exit_status
+        "Optimizing WASM module finished abnormally: {exit_status}"
     );
     opt_wasm_file
 }
@@ -84,9 +82,8 @@ pub fn compile(optimize: bool) -> Vec<u8> {
     }
     fs::read(&wasm_file).unwrap_or_else(|err| {
         panic!(
-            "Error reading file `{}`: {}",
-            wasm_file.to_string_lossy(),
-            err
+            "Error reading file `{}`: {err}",
+            wasm_file.to_string_lossy()
         )
     })
 }
