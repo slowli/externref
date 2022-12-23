@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":[["Error","Errors that can occur when processing a WASM module."],["Location","Location of a `Resource`: a function argument or a return type."]],"struct":[["Processor","WASM module processor encapsulating processing options."]]};

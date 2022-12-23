@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"attr":[["externref","Prepares imported functions or an exported function with `Resource` args and/or return type."]]};

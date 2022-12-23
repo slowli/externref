@@ -1,0 +1,121 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Low-cost reference type shims for WASM modules."><meta name="keywords" content="rust, rustlang, rust-lang, externref"><title>externref - Rust</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../SourceSerif4-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../FiraSans-Regular.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../FiraSans-Medium.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../SourceCodePro-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../SourceSerif4-Bold.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../SourceCodePro-Semibold.ttf.woff2"><link rel="stylesheet" href="../normalize.css"><link rel="stylesheet" href="../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" href="../ayu.css" disabled><link rel="stylesheet" href="../dark.css" disabled><link rel="stylesheet" href="../light.css" id="themeStyle"><script id="default-settings" ></script><script src="../storage.js"></script><script defer src="../crates.js"></script><script defer src="../main.js"></script><noscript><link rel="stylesheet" href="../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../favicon.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle">&#9776;</button><a class="sidebar-logo" href="../externref/index.html"><div class="logo-container"><img class="rust-logo" src="../rust-logo.svg" alt="logo"></div></a><h2 class="location"></h2></nav><nav class="sidebar"><a class="sidebar-logo" href="../externref/index.html"><div class="logo-container"><img class="rust-logo" src="../rust-logo.svg" alt="logo"></div></a><h2 class="location"><a href="#">Crate externref</a></h2><div class="sidebar-elems"><div class="block"><ul><li class="version">Version 0.1.0</li><li><a id="all-types" href="all.html">All Items</a></li></ul></div><section><div class="block"><ul><li><a href="#modules">Modules</a></li><li><a href="#structs">Structs</a></li><li><a href="#enums">Enums</a></li><li><a href="#attributes">Attribute Macros</a></li></ul></div></section></div></nav><main><div class="width-limiter"><div class="sub-container"><a class="sub-logo-container" href="../externref/index.html"><img class="rust-logo" src="../rust-logo.svg" alt="logo"></a><nav class="sub"><form class="search-form"><div class="search-container"><span></span><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><button type="button">?</button></div><div id="settings-menu" tabindex="-1"><a href="../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../wheel.svg"></a></div></div></form></nav></div><section id="main-content" class="content"><div class="main-heading"><h1 class="fqn"><span class="in-band">Crate <a class="mod" href="#">externref</a><button id="copy-path" onclick="copy_path(this)" title="Copy item path to clipboard"><img src="../clipboard.svg" width="19" height="18" alt="Copy item path"></button></span></h1><span class="out-of-band"><a class="srclink" href="../src/externref/lib.rs.html#1-349">source</a> · <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">[<span class="inner">&#x2212;</span>]</a></span></div><details class="rustdoc-toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Low-cost <a href="https://webassembly.github.io/spec/core/syntax/types.html#reference-types">reference type</a> shims for WASM modules.</p>
+<p>Reference type (aka <code>externref</code> or <code>anyref</code>) is an opaque reference made available to
+a WASM module by the host environment. Such references cannot be forged in the WASM code
+and can be associated with arbitrary host data, thus making them a good alternative to
+ad-hoc handles (e.g., numeric ones). References cannot be stored in WASM linear memory;
+they are confined to the stack and tables with <code>externref</code> elements.</p>
+<p>Rust does not support reference types natively; there is no way to produce an import / export
+that has <code>externref</code> as an argument or a return type. <a href="https://crates.io/crates/wasm-bindgen"><code>wasm-bindgen</code></a> patches WASM if
+<code>externref</code>s are enabled. This library strives to accomplish the same goal for generic
+low-level WASM ABIs (<code>wasm-bindgen</code> is specialized for browser hosts).</p>
+<h2 id="externref-use-cases"><a href="#externref-use-cases"><code>externref</code> use cases</a></h2>
+<p>Since <code>externref</code>s are completely opaque from the module perspective, the only way to use
+them is to send an <code>externref</code> back to the host as an argument of an imported function.
+(Depending on the function semantics, the call may or may not consume the <code>externref</code>
+and may or may not modify the underlying data; this is not reflected
+by the WASM function signature.) An <code>externref</code> cannot be dereferenced by the module,
+thus, the module cannot directly access or modify the data behind the reference. Indeed,
+the module cannot even be sure which kind of data is being referenced.</p>
+<p>It may seem that this limits <code>externref</code> utility significantly,
+but <code>externref</code>s can still be useful, e.g. to model <a href="https://en.wikipedia.org/wiki/Capability-based_security">capability-based security</a> tokens
+or resource handles in the host environment. Another potential use case is encapsulating
+complex data that would be impractical to transfer across the WASM API boundary
+(especially if the data shape may evolve over time), and/or if interactions with data
+must be restricted from the module side.</p>
+<h2 id="usage"><a href="#usage">Usage</a></h2>
+<ol>
+<li>Use <a href="struct.Resource.html" title="Resource"><code>Resource</code></a>s as arguments / return results for imported and/or exported functions
+in a WASM module in place of <code>externref</code>s . Reference args (including mutable references)
+and the <code>Option&lt;_&gt;</code> wrapper are supported as well.</li>
+<li>Add the <code>#[externref]</code> proc macro on the imported / exported functions.</li>
+<li>Post-process the generated WASM module with the <a href="processor/index.html" title="processor"><code>processor</code></a>.</li>
+</ol>
+<p><code>Resource</code>s support primitive downcasting and upcasting with <code>Resource&lt;()&gt;</code> signalling
+a generic resource. Downcasting is <em>unchecked</em>; it is up to the <code>Resource</code> users to
+define a way to check the resource kind dynamically if necessary. One possible approach
+for this is defining a WASM import <code>fn(&amp;Resource&lt;()&gt;) -&gt; Kind</code>, where <code>Kind</code> is the encoded
+kind of the supplied resource, such as <code>i32</code>.</p>
+<h2 id="how-it-works"><a href="#how-it-works">How it works</a></h2>
+<p>The <a href="attr.externref.html"><code>externref</code> macro</a> detects <code>Resource</code> args / return types
+for imported and exported functions. All <code>Resource</code> args or return types are replaced
+with <code>usize</code>s and a wrapper function is added that performs the necessary transform
+from / to <code>usize</code>.
+Additionally, a function signature describing where <code>Resource</code> args are located
+is recorded in a WASM custom section.</p>
+<p>To handle <code>usize</code> (~<code>i32</code> in WASM) &lt;-&gt; <code>externref</code> conversions, managing resources is performed
+using 3 function imports from a surrogate module:</p>
+<ul>
+<li>Creating a <code>Resource</code> (“real” signature <code>fn(externref) -&gt; usize</code>) stores a reference
+into an <code>externref</code> table and returns the table index. The index is what is actually
+stored within the <code>Resource</code>, meaning that <code>Resource</code>s can be easily placed on heap.</li>
+<li>Getting a reference from a <code>Resource</code> (“real” signature <code>fn(usize) -&gt; externref</code>)
+is an indexing operation for the <code>externref</code> table.</li>
+<li><a href="struct.Resource.html#method.drop" title="Resource::drop()"><code>Resource::drop()</code></a> (“real” signature <code>fn(usize)</code>) removes the reference from the table.</li>
+</ul>
+<p>Real <code>externref</code>s are patched back to the imported / exported functions
+by the WASM module post-processor:</p>
+<ul>
+<li>Imports from a surrogate module referenced by <code>Resource</code> methods are replaced
+with local WASM functions. Functions for getting an <code>externref</code> from the table
+and dropping an <code>externref</code> are more or less trivial. Storing an <code>externref</code> is less so;
+we don’t want to excessively grow the <code>externref</code>s table, thus we search for null refs
+among its existing elements first, and only grow the table if all existing table elements are
+occupied.</li>
+<li>Patching changes function types, and as a result types of some locals.
+This is OK because the post-processor also changes the signatures of affected
+imported / exported functions. The success relies on the fact that
+a reference is only stored <em>immediately</em> after receiving it from the host;
+likewise, a reference is only obtained <em>immediately</em> before passing it to the host.
+<code>Resource</code>s can be dropped anywhere, but the corresponding <code>externref</code> removal function
+does not need its type changed.</li>
+</ul>
+<h2 id="crate-features"><a href="#crate-features">Crate features</a></h2><h3 id="processor"><a href="#processor"><code>processor</code></a></h3>
+<p><em>(Off by default)</em></p>
+<p>Enables WASM module processing via the <a href="processor/index.html" title="processor"><code>processor</code></a> module.</p>
+<h3 id="tracing"><a href="#tracing"><code>tracing</code></a></h3>
+<p><em>(Off by default)</em></p>
+<p>Enables tracing during <a href="processor/index.html">module processing</a> with the <a href="https://docs.rs/tracing/"><code>tracing</code></a> facade.
+Tracing events / spans mostly use <code>INFO</code> and <code>DEBUG</code> levels.</p>
+<h2 id="examples"><a href="#examples">Examples</a></h2>
+<p>Using the <code>#[externref]</code> macro and <code>Resource</code>s in WASM-targeting code:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>externref::{externref, Resource};
+
+<span class="comment">// Two marker types for different resources.
+</span><span class="kw">pub struct </span>Sender(());
+<span class="kw">pub struct </span>Bytes(());
+
+<span class="attribute">#[externref]
+#[link(wasm_import_module = <span class="string">&quot;test&quot;</span>)]
+</span><span class="kw">extern </span><span class="string">&quot;C&quot; </span>{
+    <span class="comment">// This import will have signature `(externref, i32, i32) -&gt; externref`
+    // on host.
+    </span><span class="kw">fn </span>send_message(
+        sender: <span class="kw-2">&amp;</span>Resource&lt;Sender&gt;,
+        message_ptr: <span class="kw-2">*const </span>u8,
+        message_len: usize,
+    ) -&gt; Resource&lt;Bytes&gt;;
+
+    <span class="comment">// `Option`s are used to deal with null references. This function will have
+    // `(externref) -&gt; i32` signature.
+    </span><span class="kw">fn </span>message_len(bytes: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>Resource&lt;Bytes&gt;&gt;) -&gt; usize;
+    <span class="comment">// This one has `() -&gt; externref` signature.
+    </span><span class="kw">fn </span>last_sender() -&gt; <span class="prelude-ty">Option</span>&lt;Resource&lt;Sender&gt;&gt;;
+}
+
+<span class="comment">// This export will have signature `(externref)` on host.
+</span><span class="attribute">#[externref]
+#[export_name = <span class="string">&quot;test_export&quot;</span>]
+</span><span class="kw">pub extern </span><span class="string">&quot;C&quot; </span><span class="kw">fn </span>test_export(sender: Resource&lt;Sender&gt;) {
+    <span class="kw">let </span>messages: Vec&lt;<span class="kw">_</span>&gt; = [<span class="string">&quot;test&quot;</span>, <span class="string">&quot;42&quot;</span>, <span class="string">&quot;some other string&quot;</span>]
+        .into_iter()
+        .map(|msg| {
+            <span class="kw">unsafe </span>{ send_message(<span class="kw-2">&amp;</span>sender, msg.as_ptr(), msg.len()) }
+        })
+        .collect();
+    <span class="comment">// ...
+    // All 4 resources are dropped when exiting the function.
+</span>}</code></pre></div>
+</div></details><h2 id="modules" class="small-section-header"><a href="#modules">Modules</a></h2><div class="item-table"><div class="item-row"><div class="item-left module-item"><a class="mod" href="processor/index.html" title="externref::processor mod">processor</a><span class="stab portability" title="Available on crate feature `processor` only"><code>processor</code></span></div><div class="item-right docblock-short">WASM module processor for <code>externref</code>s.</div></div></div><h2 id="structs" class="small-section-header"><a href="#structs">Structs</a></h2><div class="item-table"><div class="item-row"><div class="item-left module-item"><a class="struct" href="struct.BitSlice.html" title="externref::BitSlice struct">BitSlice</a></div><div class="item-right docblock-short">Slice of bits. This type is used to mark <a href="struct.Resource.html"><code>Resource</code></a> args
+in imported / exported functions.</div></div><div class="item-row"><div class="item-left module-item"><a class="struct" href="struct.Function.html" title="externref::Function struct">Function</a></div><div class="item-right docblock-short">Information about a function with <a href="struct.Resource.html"><code>Resource</code></a> args or return type.</div></div><div class="item-row"><div class="item-left module-item"><a class="struct" href="struct.ReadError.html" title="externref::ReadError struct">ReadError</a></div><div class="item-right docblock-short">Errors that can occur when reading declarations of functions manipulating <a href="struct.Resource.html"><code>Resource</code></a>s
+from a WASM module.</div></div><div class="item-row"><div class="item-left module-item"><a class="struct" href="struct.Resource.html" title="externref::Resource struct">Resource</a></div><div class="item-right docblock-short">Host resource exposed to WASM.</div></div></div><h2 id="enums" class="small-section-header"><a href="#enums">Enums</a></h2><div class="item-table"><div class="item-row"><div class="item-left module-item"><a class="enum" href="enum.FunctionKind.html" title="externref::FunctionKind enum">FunctionKind</a></div><div class="item-right docblock-short">Kind of a function with <a href="struct.Resource.html"><code>Resource</code></a> args or return type.</div></div><div class="item-row"><div class="item-left module-item"><a class="enum" href="enum.ReadErrorKind.html" title="externref::ReadErrorKind enum">ReadErrorKind</a></div><div class="item-right docblock-short">Kind of a <a href="struct.ReadError.html" title="ReadError"><code>ReadError</code></a>.</div></div></div><h2 id="attributes" class="small-section-header"><a href="#attributes">Attribute Macros</a></h2><div class="item-table"><div class="item-row"><div class="item-left module-item"><a class="attr" href="attr.externref.html" title="externref::externref attr">externref</a><span class="stab portability" title="Available on crate feature `macro` only"><code>macro</code></span></div><div class="item-right docblock-short">Prepares imported functions or an exported function with <code>Resource</code> args and/or return type.</div></div></div></section></div></main><div id="rustdoc-vars" data-root-path="../" data-current-crate="externref" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.66.0-nightly (9062b780b 2022-09-21)" ></div></body></html>
