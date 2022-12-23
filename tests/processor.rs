@@ -55,7 +55,7 @@ fn basic_module() {
     let import_id = module.imports.find("arena", "alloc").unwrap();
     let import_id = match &module.imports.get(import_id).kind {
         ImportKind::Function(fn_id) => *fn_id,
-        other => panic!("unexpected import type: {:?}", other),
+        other => panic!("unexpected import type: {other:?}"),
     };
     let function_type = module.types.get(module.funcs.get(import_id).ty());
     assert_eq!(function_type.params(), [ValType::Externref, ValType::I32]);
@@ -72,7 +72,7 @@ fn basic_module() {
             if export.name == "test" {
                 Some(match &export.item {
                     ExportItem::Function(fn_id) => *fn_id,
-                    other => panic!("unexpected export type: {:?}", other),
+                    other => panic!("unexpected export type: {other:?}"),
                 })
             } else {
                 None
@@ -105,7 +105,7 @@ fn basic_module_with_no_table_export_and_drop_hook() {
     let import_id = module.imports.find("hook", "drop_ref").unwrap();
     let import_id = match &module.imports.get(import_id).kind {
         ImportKind::Function(fn_id) => *fn_id,
-        other => panic!("unexpected import type: {:?}", other),
+        other => panic!("unexpected import type: {other:?}"),
     };
     let function_type = module.types.get(module.funcs.get(import_id).ty());
     assert_eq!(function_type.params(), [ValType::Externref]);

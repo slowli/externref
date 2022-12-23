@@ -16,8 +16,8 @@ pub enum Location {
 impl fmt::Display for Location {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Arg(idx) => write!(formatter, "arg #{}", idx),
-            Self::ReturnType(idx) => write!(formatter, "return type #{}", idx),
+            Self::Arg(idx) => write!(formatter, "arg #{idx}"),
+            Self::ReturnType(idx) => write!(formatter, "return type #{idx}"),
         }
     }
 }

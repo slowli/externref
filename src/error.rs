@@ -16,7 +16,7 @@ impl fmt::Display for ReadErrorKind {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnexpectedEof => formatter.write_str("reached end of input"),
-            Self::Utf8(err) => write!(formatter, "{}", err),
+            Self::Utf8(err) => write!(formatter, "{err}"),
         }
     }
 }

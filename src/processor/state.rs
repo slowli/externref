@@ -661,7 +661,7 @@ mod tests {
             .iter()
             .filter(|local| local.ty() == ValType::Externref)
             .collect();
-        assert_eq!(ref_locals.len(), 1, "{:?}", ref_locals);
+        assert_eq!(ref_locals.len(), 1, "{ref_locals:?}");
         let ref_local_id = ref_locals[0].id();
 
         let local_fn = module.funcs.get(fn_id).kind.unwrap_local();
