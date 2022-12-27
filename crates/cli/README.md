@@ -44,7 +44,7 @@ To run the app in a Docker container, use a command like
 
 ```shell
 cat module.wasm | \
-  docker run -i --rm ghcr.io/slowli/externref:latest \
+  docker run -i --rm ghcr.io/slowli/externref:main \
   /externref - > processed-module.wasm
 ```
 
