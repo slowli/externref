@@ -1,0 +1,4 @@
+# Do not send the `target` dirs to the Docker builder
+target
+crates/cli/target
+e2e-tests

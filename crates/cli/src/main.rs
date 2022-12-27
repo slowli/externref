@@ -1,7 +1,7 @@
 //! CLI for the `externref` crate.
 
 use anyhow::{anyhow, ensure, Context};
-use structopt::StructOpt;
+use clap::Parser;
 
 use std::{
     fs,
@@ -12,7 +12,7 @@ use std::{
 
 use externref::processor::Processor;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ModuleAndName {
     module: String,
     name: String,
@@ -39,29 +39,29 @@ impl FromStr for ModuleAndName {
 
 /// CLI for transforming WASM modules with `externref` shims produced with the help
 /// of the `externref` crate.
-#[derive(Debug, StructOpt)]
-struct Args {
+#[derive(Debug, Parser)]
+struct Cli {
     /// Path to the input WASM module.
     /// If set to `-`, the module will be read from the standard input.
     input: PathBuf,
     /// Path to the output WASM module. If not specified, the module will be emitted
     /// to the standard output.
-    #[structopt(long, short = "o")]
+    #[arg(long, short = 'o')]
     output: Option<PathBuf>,
     /// Name of the exported `externref`s table where refs obtained from the host
     /// are placed.
-    #[structopt(long = "table", default_value = "externrefs")]
+    #[arg(long = "table", default_value = "externrefs")]
     export_table: String,
     /// Function to notify the host about dropped `externref`s specified
     /// in the `module::name` format.
     ///
     /// This function will be added as an import with a signature `(externref) -> ()`
     /// and will be called immediately before dropping each reference.
-    #[structopt(long = "drop-fn")]
+    #[arg(long = "drop-fn")]
     drop_fn: Option<ModuleAndName>,
 }
 
-impl Args {
+impl Cli {
     #[cfg(feature = "tracing")]
     fn configure_tracing() {
         use tracing_subscriber::{filter::EnvFilter, FmtSubscriber};
@@ -69,6 +69,7 @@ impl Args {
         FmtSubscriber::builder()
             .without_time()
             .with_env_filter(EnvFilter::from_default_env())
+            .with_writer(io::stderr)
             .init();
     }
 
@@ -123,5 +124,5 @@ impl Args {
 }
 
 fn main() -> anyhow::Result<()> {
-    Args::from_args().run()
+    Cli::parse().run()
 }

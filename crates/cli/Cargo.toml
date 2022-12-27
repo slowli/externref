@@ -17,7 +17,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.66"
-structopt = { version = "0.3.21", features = ["wrap_help"] }
+clap = { version = "4.0.32", features = ["derive", "wrap_help"] }
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"], optional = true }
 
 externref = { version = "0.1.0", path = "../..", features = ["processor"] }

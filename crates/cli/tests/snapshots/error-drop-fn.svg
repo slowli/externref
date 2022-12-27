@@ -1,5 +1,5 @@
 <!-- Created with term-transcript v0.2.0 (https://github.com/slowli/term-transcript) -->
-<svg viewBox="0 -22 720 106" width="720" height="106" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 -22 720 142" width="720" height="142" xmlns="http://www.w3.org/2000/svg">
   <style>
     :root {
       --black: #1c1c1c; --i-black: #666666;
@@ -69,11 +69,13 @@
   <circle cx="17" cy="-9" r="7" style="fill: var(--red);"/>
   <circle cx="37" cy="-9" r="7" style="fill: var(--yellow);"/>
   <circle cx="57" cy="-9" r="7" style="fill: var(--green);"/>
-  <svg x="0" y="10" width="720" height="64" viewBox="0 0 720 64">
-    <foreignObject width="720" height="64">
+  <svg x="0" y="10" width="720" height="100" viewBox="0 0 720 100">
+    <foreignObject width="720" height="100">
       <div xmlns="http://www.w3.org/1999/xhtml" class="container">
         <div class="user-input"><pre><span class="prompt">$</span> externref --drop-fn test_drop -o /dev/null tests/test.wasm</pre></div>
-        <div class="term-output"><pre><span class="bold fg1">error:</span> Invalid value for '<span class="fg3">--drop-fn &lt;drop-fn&gt;</span>': function must be specified in th<b class="hard-br"><br/></b>e `module::name` format</pre></div>
+        <div class="term-output"><pre><span class="bold fg1">error:</span> Invalid value '<span class="fg3">test_drop</span>' for '<span class="fg3">--drop-fn &lt;DROP_FN&gt;</span>': function must be spe<b class="hard-br"><br/></b>cified in the `module::name` format
+
+For more information try '<span class="bold">--help</span>'</pre></div>
       </div>
     </foreignObject>
   </svg>
