@@ -69,6 +69,7 @@ impl Cli {
         FmtSubscriber::builder()
             .without_time()
             .with_env_filter(EnvFilter::from_default_env())
+            .with_writer(io::stderr)
             .init();
     }
 

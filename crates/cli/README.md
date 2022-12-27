@@ -20,6 +20,10 @@ externref --help
 
 By default, tracing is enabled via the `tracing` crate feature. You can disable
 the feature manually by adding a `--no-default-features` arg to the installation command.
+Tracing is performed with the `externref::*` targets, mostly on the `DEBUG` and `INFO` levels.
+Tracing events are output to the stderr using [the standard subscriber][fmt-subscriber];
+its filtering can be configured using the `RUST_LOG` env variable
+(e.g., `RUST_LOG=externref=debug`).
 
 ## Usage
 
@@ -40,8 +44,8 @@ To run the app in a Docker container, use a command like
 
 ```shell
 cat module.wasm | \
-  docker run -i --rm ghcr.io/slowli/externref:latest /externref - \
-  > processed-module.wasm 
+  docker run -i --rm ghcr.io/slowli/externref:latest \
+  /externref - > processed-module.wasm
 ```
 
 Here, `/externref -` specifies the executed command in the Docker image
@@ -68,5 +72,6 @@ for inclusion in `externref` by you, as defined in the Apache-2.0 license,
 shall be dual licensed as above, without any additional terms or conditions.
 
 [`externref`]: https://crates.io/crates/externref
+[fmt-subscriber]: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/index.html
 [`processor`]: https://slowli.github.io/externref/externref/processor/
 [output-with-tracing]: https://github.com/slowli/externref/raw/HEAD/crates/cli/tests/snapshots/with-tracing.svg?sanitize=true
