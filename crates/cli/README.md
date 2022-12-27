@@ -37,8 +37,7 @@ The capture includes the tracing output, which was switched on
 by setting the `RUST_LOG` env variable. Tracing info includes each transformed function
 and some other information that could be useful for debugging.
 
-![Output with tracing](tests/snapshots/with-tracing.svg)
-<!-- TODO: include absolute link before publishing -->
+![Output with tracing][output-with-tracing]
 
 ## License
 
@@ -51,3 +50,4 @@ shall be dual licensed as above, without any additional terms or conditions.
 
 [`externref`]: https://crates.io/crates/externref
 [`processor`]: https://slowli.github.io/externref/externref/processor/
+[output-with-tracing]: https://github.com/slowli/externref/raw/HEAD/crates/cli/tests/snapshots/with-tracing.svg?sanitize=true
