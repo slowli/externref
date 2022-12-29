@@ -25,6 +25,8 @@ Tracing events are output to the stderr using [the standard subscriber][fmt-subs
 its filtering can be configured using the `RUST_LOG` env variable
 (e.g., `RUST_LOG=externref=debug`).
 
+Alternatively, you may use the app Docker image [as described below](#using-docker-image).
+
 ## Usage
 
 The executable provides the same functionality as the WASM [`processor`]
