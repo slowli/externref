@@ -204,8 +204,8 @@ jobs:
           docker buildx prune --force --filter=type=regular
           docker buildx prune --force --filter=type=source.local
           rm -rf target/docker && mkdir -p target/docker
-          docker cp "$BUILDER:/var/lib/buildkit" target/docker
-          du -h -d 1 target/docker
+          docker cp "$BUILDER:/var/lib/buildkit/." target/docker
+          du -ah -d 1 target/docker
         env:
           BUILDER: ${{ env.buildx_container }}
 
