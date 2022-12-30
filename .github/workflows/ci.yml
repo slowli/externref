@@ -18,19 +18,24 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.msrv }}
+          override: true
+      - name: Generate lockfile
+        uses: actions-rs/cargo@v1
+        with:
+          command: generate-lockfile
+
       - name: Cache cargo build
         uses: actions/cache@v3
         with:
           path: |
             target/
             crates/cli/target/
-          key: ${{ runner.os }}-msrv-cargo-build-target
-
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: ${{ env.msrv }}
-          override: true
+          key: ${{ runner.os }}-msrv-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-msrv-cargo
 
       # The E2E test uses `wasmtime` with frequently changing MSRV, so we don't test it here.
       - name: Run tests
@@ -55,14 +60,6 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Cache cargo build
-        uses: actions/cache@v3
-        with:
-          path: |
-            target/
-            crates/cli/target/
-          key: ${{ runner.os }}-cargo-build-target
-
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -75,6 +72,19 @@ jobs:
           wget -q -O binaryen.tar.gz https://github.com/WebAssembly/binaryen/releases/download/$binaryen/binaryen-$binaryen-x86_64-linux.tar.gz && \
           tar xf binaryen.tar.gz && \
           sudo install "binaryen-$binaryen/bin/wasm-opt" /usr/local/bin
+      - name: Generate lockfile
+        uses: actions-rs/cargo@v1
+        with:
+          command: generate-lockfile
+
+      - name: Cache cargo build
+        uses: actions/cache@v3
+        with:
+          path: |
+            target/
+            crates/cli/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo
 
       - name: Format
         uses: actions-rs/cargo@v1
@@ -151,7 +161,8 @@ jobs:
         uses: actions/cache@v3
         with:
           path: target/docker
-          key: ${{ runner.os }}-docker-buildkit
+          key: ${{ runner.os }}-docker-buildkit-${{ hashFiles('crates/cli/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-docker-buildkit
 
       - name: Extract Docker metadata
         id: meta
@@ -236,18 +247,23 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Cache cargo build
-        uses: actions/cache@v3
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-document-target
-
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: ${{ env.nightly }}
           profile: minimal
           override: true
+      - name: Generate lockfile
+        uses: actions-rs/cargo@v1
+        with:
+          command: generate-lockfile
+
+      - name: Cache cargo build
+        uses: actions/cache@v3
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-document-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-document
 
       - name: Build docs
         run: |
