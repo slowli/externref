@@ -25,6 +25,8 @@ Tracing events are output to the stderr using [the standard subscriber][fmt-subs
 its filtering can be configured using the `RUST_LOG` env variable
 (e.g., `RUST_LOG=externref=debug`).
 
+Alternatively, you may use the app Docker image [as described below](#using-docker-image).
+
 ## Usage
 
 The executable provides the same functionality as the WASM [`processor`]
@@ -44,14 +46,12 @@ To run the app in a Docker container, use a command like
 
 ```shell
 cat module.wasm | \
-  docker run -i --rm ghcr.io/slowli/externref:latest \
-  /externref - > processed-module.wasm
+  docker run -i --rm ghcr.io/slowli/externref:main - > processed-module.wasm
 ```
 
-Here, `/externref -` specifies the executed command in the Docker image
-and its argument (reading the input module from the stdin).
+Here, `-` is the argument to the CLI app instructing to read the input module from the stdin.
 To output tracing information, set the `RUST_LOG` env variable in the container,
-e.g. using `docker run --env RUST_LOG=debug ..`.
+e.g. using `docker run --env RUST_LOG=debug ...`.
 
 ### Examples
 

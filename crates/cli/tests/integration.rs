@@ -22,6 +22,7 @@ fn test_config() -> TestConfig<PtyCommand> {
     TestConfig::new(shell_options).with_template(template())
 }
 
+#[cfg(feature = "tracing")]
 #[test]
 fn cli_with_tracing() {
     // The WASM module is taken from the end-to-end test. We check it into the version control
