@@ -25,7 +25,10 @@ Tracing events are output to the stderr using [the standard subscriber][fmt-subs
 its filtering can be configured using the `RUST_LOG` env variable
 (e.g., `RUST_LOG=externref=debug`).
 
-Alternatively, you may use the app Docker image [as described below](#using-docker-image).
+Alternatively, you may use the app Docker image [as described below](#using-docker-image),
+or download a pre-built app binary for popular targets (x86_64 for Linux / macOS / Windows
+and AArch64 for macOS)
+from [GitHub Releases](https://github.com/slowli/externref/releases).
 
 ## Usage
 
@@ -45,8 +48,9 @@ from the [GitHub Container registry](https://github.com/slowli/externref/pkgs/co
 To run the app in a Docker container, use a command like
 
 ```shell
-cat module.wasm | \
-  docker run -i --rm ghcr.io/slowli/externref:main - > processed-module.wasm
+  docker run -i --rm ghcr.io/slowli/externref:main - \
+    < module.wasm \
+    > processed-module.wasm
 ```
 
 Here, `-` is the argument to the CLI app instructing to read the input module from the stdin.

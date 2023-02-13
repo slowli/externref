@@ -226,8 +226,9 @@ jobs:
           IMAGE_TAG: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
       - name: Test image (transform)
         run: |
-          cat crates/cli/tests/test.wasm | \
-          docker run -i --rm --env RUST_LOG=externref=debug "$IMAGE_TAG" - > /dev/null
+          docker run -i --rm --env RUST_LOG=externref=debug "$IMAGE_TAG" - \
+            < crates/cli/tests/test.wasm \
+            > /dev/null
         env:
           IMAGE_TAG: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
 
@@ -262,8 +263,8 @@ jobs:
         uses: actions/cache@v3
         with:
           path: target
-          key: ${{ runner.os }}-cargo-document-${{ hashFiles('Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-document
+          key: ${{ runner.os }}-document-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-document-cargo
 
       - name: Build docs
         run: |
