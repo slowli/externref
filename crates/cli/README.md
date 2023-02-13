@@ -25,7 +25,10 @@ Tracing events are output to the stderr using [the standard subscriber][fmt-subs
 its filtering can be configured using the `RUST_LOG` env variable
 (e.g., `RUST_LOG=externref=debug`).
 
-Alternatively, you may use the app Docker image [as described below](#using-docker-image).
+Alternatively, you may use the app Docker image [as described below](#using-docker-image),
+or download a pre-built app binary for popular targets (x86_64 for Linux / macOS / Windows
+and AArch64 for macOS)
+from [GitHub Releases](https://github.com/slowli/externref/releases).
 
 ## Usage
 
