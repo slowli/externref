@@ -262,8 +262,8 @@ jobs:
         uses: actions/cache@v3
         with:
           path: target
-          key: ${{ runner.os }}-cargo-document-${{ hashFiles('Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-document
+          key: ${{ runner.os }}-document-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-document-cargo
 
       - name: Build docs
         run: |
