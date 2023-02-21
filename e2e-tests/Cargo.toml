@@ -19,6 +19,6 @@ predicates = { version = "2.1.1", default-features = false }
 tracing = "0.1.37"
 tracing-capture = "0.1.0"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
-wasmtime = "5.0.0"
+wasmtime = "6.0.0"
 
 externref = { version = "0.1.0", path = "..", features = ["processor", "tracing"] }
