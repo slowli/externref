@@ -48,9 +48,9 @@ from the [GitHub Container registry](https://github.com/slowli/externref/pkgs/co
 To run the app in a Docker container, use a command like
 
 ```shell
-  docker run -i --rm ghcr.io/slowli/externref:main - \
-    < module.wasm \
-    > processed-module.wasm
+docker run -i --rm ghcr.io/slowli/externref:main - \
+  < module.wasm \
+  > processed-module.wasm
 ```
 
 Here, `-` is the argument to the CLI app instructing to read the input module from the stdin.
