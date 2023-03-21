@@ -18,11 +18,11 @@ maintenance = { status = "experimental" }
 proc-macro = true
 
 [dependencies]
-darling = "0.14.1"
 proc-macro2 = "1.0"
 quote = "1.0"
-syn = "2.0"
+syn = { version = "2.0", features = ["full"] }
 
 [dev-dependencies]
+syn = { version = "2.0", features = ["extra-traits"] }
 trybuild = "1.0.71"
 version-sync = "0.9.4"

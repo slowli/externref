@@ -1,11 +1,9 @@
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{
-    parse::{Error as SynError, Parse, ParseStream},
-    spanned::Spanned,
-    Attribute, Expr, FnArg, ForeignItem, GenericArgument, Ident, ItemFn, ItemForeignMod, Lit,
-    LitStr, Meta, MetaList, NestedMeta, PatType, Path, PathArguments, Signature, Token, Type,
-    TypePath, Visibility,
+    parse::Error as SynError, punctuated::Punctuated, spanned::Spanned, Attribute, Expr, ExprLit,
+    FnArg, ForeignItem, GenericArgument, Ident, ItemFn, ItemForeignMod, Lit, LitStr, Meta, PatType,
+    Path, PathArguments, Signature, Token, Type, TypePath, Visibility,
 };
 
 use std::{collections::HashMap, mem};
@@ -31,31 +29,16 @@ fn check_abi(
     Ok(())
 }
 
-#[derive(Debug)]
-struct AttrExpr {
-    _eq_token: Token![=],
-    expr: Expr,
-}
-
-impl Parse for AttrExpr {
-    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
-        Ok(Self {
-            _eq_token: input.parse()?,
-            expr: input.parse()?,
-        })
-    }
-}
-
 fn attr_expr(attrs: &[Attribute], name: &str) -> Result<Option<Expr>, SynError> {
-    let attr = attrs.iter().find(|attr| attr.path.is_ident(name));
+    let attr = attrs.iter().find(|attr| attr.path().is_ident(name));
     let attr = if let Some(attr) = attr {
         attr
     } else {
         return Ok(None);
     };
 
-    let AttrExpr { expr, .. } = syn::parse2(attr.tokens.clone())?;
-    Ok(Some(expr))
+    let name_value = attr.meta.require_name_value()?;
+    Ok(Some(name_value.value.clone()))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -180,7 +163,6 @@ enum ReturnType {
     Resource(ResourceKind),
 }
 
-#[derive(Debug)]
 struct Function {
     name: Expr,
     arg_count: usize,
@@ -390,7 +372,7 @@ pub(crate) fn for_export(function: &mut ItemFn, attrs: &ExternrefAttrs) -> Token
         // "Un-export" the function by removing the relevant attributes.
         function.sig.abi = None;
         let attr_idx = function.attrs.iter().enumerate().find_map(|(idx, attr)| {
-            if attr.path.is_ident("export_name") {
+            if attr.path().is_ident("export_name") {
                 Some(idx)
             } else {
                 None
@@ -402,7 +384,7 @@ pub(crate) fn for_export(function: &mut ItemFn, attrs: &ExternrefAttrs) -> Token
         // generate an export.
         function
             .attrs
-            .retain(|attr| !attr.path.is_ident("no_mangle"));
+            .retain(|attr| !attr.path().is_ident("no_mangle"));
 
         let export = parsed_function.wrap_export(function, export_name_attr);
         (Some(parsed_function.declare(None)), Some(export))
@@ -417,7 +399,6 @@ pub(crate) fn for_export(function: &mut ItemFn, attrs: &ExternrefAttrs) -> Token
     }
 }
 
-#[derive(Debug)]
 struct Imports {
     module_name: String,
     functions: Vec<(Function, TokenStream)>,
@@ -430,20 +411,24 @@ impl Imports {
 
         check_abi("foreign module", module.abi.name.as_ref(), &module.abi)?;
 
-        let link_attr = module.attrs.iter().find(|attr| attr.path.is_ident("link"));
+        let link_attr = module
+            .attrs
+            .iter()
+            .find(|attr| attr.path().is_ident("link"));
         let link_attr = match link_attr {
             Some(attr) => attr,
             None => return Err(SynError::new_spanned(module, NO_ATTR_MSG)),
         };
-        let link_meta = link_attr.parse_meta()?;
 
-        let module_name = if let Meta::List(MetaList { nested, .. }) = &link_meta {
-            nested.iter().find_map(|nested_meta| match nested_meta {
-                NestedMeta::Meta(Meta::NameValue(nv)) if nv.path.is_ident("wasm_import_module") => {
-                    Some(&nv.lit)
-                }
-                _ => None,
-            })
+        let module_name = if matches!(link_attr.meta, Meta::List(_)) {
+            let nested =
+                link_attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
+            nested
+                .into_iter()
+                .find_map(|nested_meta| match nested_meta {
+                    Meta::NameValue(nv) if nv.path.is_ident("wasm_import_module") => Some(nv.value),
+                    _ => None,
+                })
         } else {
             let msg =
                 "Unexpected contents of `#[link(..)]` attr (expected a list of name-value pairs)";
@@ -452,7 +437,10 @@ impl Imports {
 
         let module_name =
             module_name.ok_or_else(|| SynError::new_spanned(link_attr, NO_ATTR_MSG))?;
-        let module_name = if let Lit::Str(str) = module_name {
+        let module_name = if let Expr::Lit(ExprLit {
+            lit: Lit::Str(str), ..
+        }) = module_name
+        {
             str.value()
         } else {
             let msg = "Unexpected WASM module name format (expected a string)";

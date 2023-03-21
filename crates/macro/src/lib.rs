@@ -19,36 +19,46 @@
 
 extern crate proc_macro;
 
-use darling::FromMeta;
 use proc_macro::TokenStream;
 use syn::{
     parse::{Error as SynError, Parser},
-    punctuated::Punctuated,
-    Item, NestedMeta, Path, Token,
+    Item, Path,
 };
 
 mod externref;
 
 use crate::externref::{for_export, for_foreign_module};
 
-#[derive(Debug, Default, FromMeta)]
+#[derive(Default)]
 struct ExternrefAttrs {
-    #[darling(rename = "crate", default)]
     crate_path: Option<Path>,
 }
 
 impl ExternrefAttrs {
+    fn parse(tokens: TokenStream) -> syn::Result<Self> {
+        let mut attrs = Self::default();
+        if tokens.is_empty() {
+            return Ok(attrs);
+        }
+
+        let parser = syn::meta::parser(|meta| {
+            if meta.path.is_ident("crate") {
+                let path_str: syn::LitStr = meta.value()?.parse()?;
+                attrs.crate_path = Some(path_str.parse()?);
+                Ok(())
+            } else {
+                Err(meta.error("unsupported attribute"))
+            }
+        });
+        parser.parse(tokens)?;
+        Ok(attrs)
+    }
+
     fn crate_path(&self) -> Path {
         self.crate_path
             .clone()
             .unwrap_or_else(|| syn::parse_quote!(externref))
     }
-}
-
-fn parse_attr<T: FromMeta>(tokens: TokenStream) -> syn::Result<T> {
-    let meta = Punctuated::<NestedMeta, Token![,]>::parse_terminated.parse(tokens)?;
-    let meta: Vec<_> = meta.into_iter().collect();
-    T::from_list(&meta).map_err(Into::into)
 }
 
 /// Prepares imported functions or an exported function with `Resource` args and/or return type.
@@ -70,7 +80,7 @@ pub fn externref(attr: TokenStream, input: TokenStream) -> TokenStream {
     const MSG: &str = "Unsupported item; only `extern \"C\" {}` modules and `extern \"C\" fn ...` \
         exports are supported";
 
-    let attrs = match parse_attr::<ExternrefAttrs>(attr) {
+    let attrs = match ExternrefAttrs::parse(attr) {
         Ok(attrs) => attrs,
         Err(err) => return err.into_compile_error().into(),
     };
