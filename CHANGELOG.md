@@ -17,6 +17,11 @@ The project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html)
 - CLI: add a command-line application for transforming WASM modules, and the Docker image
   with this application.
 
+### Changed
+
+- Macro: update `syn` dependency to 2.0.
+- Bump minimum supported Rust version to 1.64.
+
 ### Fixed
 
 - Fix an incorrect conditional compilation attribute for a tracing event

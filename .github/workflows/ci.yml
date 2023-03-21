@@ -7,8 +7,8 @@ on:
     branches: [ main ]
 
 env:
-  msrv: 1.60.0
-  nightly: nightly-2022-09-22
+  msrv: 1.64.0
+  nightly: nightly-2024-03-19
   binaryen: version_110
 
 jobs:
