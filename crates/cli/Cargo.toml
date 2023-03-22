@@ -23,7 +23,7 @@ tracing-subscriber = { version = "0.3.16", features = ["env-filter"], optional =
 externref = { version = "0.1.0", path = "../..", features = ["processor"] }
 
 [dev-dependencies]
-term-transcript = { version = "0.2.0", features = ["portable-pty"] }
+term-transcript = { version = "0.3.0-beta.1", features = ["portable-pty"] }
 
 [features]
 default = ["tracing"]

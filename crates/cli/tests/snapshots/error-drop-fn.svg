@@ -1,4 +1,4 @@
-<!-- Created with term-transcript v0.2.0 (https://github.com/slowli/term-transcript) -->
+<!-- Created with term-transcript v0.3.0-beta.1 (https://github.com/slowli/term-transcript) -->
 <svg viewBox="0 -22 720 142" width="720" height="142" xmlns="http://www.w3.org/2000/svg">
   <style>
     :root {
@@ -11,6 +11,7 @@
       --white: #e5e5e5; --i-white: #f3f3f3;
       --yellow: #ffe755; --i-yellow: #ff9f00;
       --hl-black: rgba(255, 255, 255, 0.1);
+      --hl-red: rgba(255, 0, 65, 0.15);
     }
     .container {
       padding: 0 10px;
@@ -30,6 +31,12 @@
       padding: 2px 10px;
     }
     .term-output { margin-bottom: 6px; }
+    .user-input-failure {
+      border-left: 2px solid var(--red);
+      border-right: 2px solid var(--red);
+      background: var(--hl-red);
+    }
+
     .bold,.prompt { font-weight: bold; }
     .italic { font-style: italic; }
     .underline { text-decoration: underline; }
@@ -72,10 +79,10 @@
   <svg x="0" y="10" width="720" height="100" viewBox="0 0 720 100">
     <foreignObject width="720" height="100">
       <div xmlns="http://www.w3.org/1999/xhtml" class="container">
-        <div class="user-input"><pre><span class="prompt">$</span> externref --drop-fn test_drop -o /dev/null tests/test.wasm</pre></div>
-        <div class="term-output"><pre><span class="bold fg1">error:</span> Invalid value '<span class="fg3">test_drop</span>' for '<span class="fg3">--drop-fn &lt;DROP_FN&gt;</span>': function must be spe<b class="hard-br"><br/></b>cified in the `module::name` format
+        <div class="user-input user-input-failure" data-exit-status="2" title="This command exited with non-zero code"><pre><span class="prompt">$</span> externref --drop-fn test_drop -o /dev/null tests/test.wasm</pre></div>
+        <div class="term-output"><pre><span class="bold fg1">error:</span> invalid value '<span class="fg3">test_drop</span>' for '<span class="fg3">--drop-fn &lt;DROP_FN&gt;</span>': function must be spe<b class="hard-br"><br/></b>cified in the `module::name` format
 
-For more information try '<span class="bold">--help</span>'</pre></div>
+For more information, try '<span class="bold">--help</span>'.</pre></div>
       </div>
     </foreignObject>
   </svg>

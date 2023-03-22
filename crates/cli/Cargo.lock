@@ -511,9 +511,9 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.23.1"
+version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11bafc859c6815fbaffbbbf4229ecb767ac913fecb27f9ad4343662e9ef099ea"
+checksum = "ffc053f057dd768a56f62cd7e434c42c831d296968997e9ac1f76ea7c2d14c41"
 dependencies = [
  "memchr",
 ]
@@ -716,9 +716,9 @@ dependencies = [
 
 [[package]]
 name = "term-transcript"
-version = "0.2.0"
+version = "0.3.0-beta.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d77280c9041d978e4ffedbdd19f710a1360085510c5e99dbcfec8e2f2bd4285"
+checksum = "5ff023bcb7f185b726bf70209c9f60bd6b2b89acab43faa5d7e9fa0ef59b1d42"
 dependencies = [
  "atty",
  "bytecount",
@@ -728,6 +728,7 @@ dependencies = [
  "pretty_assertions",
  "quick-xml",
  "serde",
+ "serde_json",
  "termcolor",
  "unicode-width",
 ]

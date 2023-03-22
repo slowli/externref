@@ -5,7 +5,7 @@
 use term_transcript::{
     svg::{Template, TemplateOptions},
     test::TestConfig,
-    PtyCommand, ShellOptions,
+    ExitStatus, PtyCommand, ShellOptions,
 };
 
 fn template() -> Template {
@@ -18,7 +18,11 @@ fn template() -> Template {
 fn test_config() -> TestConfig<PtyCommand> {
     let shell_options = ShellOptions::new(PtyCommand::default())
         .with_cargo_path()
-        .with_current_dir(env!("CARGO_MANIFEST_DIR"));
+        .with_current_dir(env!("CARGO_MANIFEST_DIR"))
+        .with_status_check("echo $?", |output| {
+            let response = output.to_plaintext().ok()?;
+            response.trim().parse().ok().map(ExitStatus)
+        });
     TestConfig::new(shell_options).with_template(template())
 }
 
