@@ -2,7 +2,7 @@
 
 [![Build Status](https://github.com/slowli/externref/workflows/CI/badge.svg?branch=main)](https://github.com/slowli/externref/actions)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue)](https://github.com/slowli/externref#license)
-![rust 1.60+ required](https://img.shields.io/badge/rust-1.60+-blue.svg?label=Required%20Rust)
+![rust 1.64+ required](https://img.shields.io/badge/rust-1.64+-blue.svg?label=Required%20Rust)
 
 This crate provides command-line interface for [`externref`]. It allows transforming
 WASM modules that use `externref` shims to use real `externref` types.
@@ -48,9 +48,9 @@ from the [GitHub Container registry](https://github.com/slowli/externref/pkgs/co
 To run the app in a Docker container, use a command like
 
 ```shell
-  docker run -i --rm ghcr.io/slowli/externref:main - \
-    < module.wasm \
-    > processed-module.wasm
+docker run -i --rm ghcr.io/slowli/externref:main - \
+  < module.wasm \
+  > processed-module.wasm
 ```
 
 Here, `-` is the argument to the CLI app instructing to read the input module from the stdin.

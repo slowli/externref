@@ -1,4 +1,4 @@
-<!-- Created with term-transcript v0.2.0 (https://github.com/slowli/term-transcript) -->
+<!-- Created with term-transcript v0.3.0-beta.1 (https://github.com/slowli/term-transcript) -->
 <svg viewBox="0 -22 720 160" width="720" height="160" xmlns="http://www.w3.org/2000/svg">
   <style>
     :root {
@@ -11,6 +11,7 @@
       --white: #e5e5e5; --i-white: #f3f3f3;
       --yellow: #ffe755; --i-yellow: #ff9f00;
       --hl-black: rgba(255, 255, 255, 0.1);
+      --hl-red: rgba(255, 0, 65, 0.15);
     }
     .container {
       padding: 0 10px;
@@ -30,6 +31,12 @@
       padding: 2px 10px;
     }
     .term-output { margin-bottom: 6px; }
+    .user-input-failure {
+      border-left: 2px solid var(--red);
+      border-right: 2px solid var(--red);
+      background: var(--hl-red);
+    }
+
     .bold,.prompt { font-weight: bold; }
     .italic { font-style: italic; }
     .underline { text-decoration: underline; }
@@ -72,7 +79,7 @@
   <svg x="0" y="10" width="720" height="118" viewBox="0 0 720 118">
     <foreignObject width="720" height="118">
       <div xmlns="http://www.w3.org/1999/xhtml" class="container">
-        <div class="user-input"><pre><span class="prompt">$</span> externref --drop-fn test::drop -o /dev/null tests/integration.rs</pre></div>
+        <div class="user-input user-input-failure" data-exit-status="1" title="This command exited with non-zero code"><pre><span class="prompt">$</span> externref --drop-fn test::drop -o /dev/null tests/integration.rs</pre></div>
         <div class="term-output"><pre>Error: failed processing module
 
 Caused by:

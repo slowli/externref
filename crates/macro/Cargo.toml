@@ -3,7 +3,7 @@ name = "externref-macro"
 version = "0.1.0"
 authors = ["Alex Ostrovski <ostrovski.alex@gmail.com>"]
 edition = "2021"
-rust-version = "1.60"
+rust-version = "1.64"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
 keywords = ["externref", "anyref", "wasm"]
@@ -18,11 +18,11 @@ maintenance = { status = "experimental" }
 proc-macro = true
 
 [dependencies]
-darling = "0.14.1"
 proc-macro2 = "1.0"
 quote = "1.0"
-syn = "1.0"
+syn = { version = "2.0", features = ["full"] }
 
 [dev-dependencies]
+syn = { version = "2.0", features = ["extra-traits"] }
 trybuild = "1.0.71"
 version-sync = "0.9.4"
