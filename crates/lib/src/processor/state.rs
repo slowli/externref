@@ -116,13 +116,10 @@ impl ProcessingState {
             }
 
             FunctionKind::Import(module_name) => {
-                let import_id = match module.imports.find(module_name, function.name) {
-                    Some(id) => id,
-                    None => {
-                        // The function is declared, but not actually used from the module.
-                        // This is fine for us.
-                        return Ok(None);
-                    }
+                let Some(import_id) = module.imports.find(module_name, function.name) else {
+                    // The function is declared, but not actually used from the module.
+                    // This is fine for us.
+                    return Ok(None);
                 };
                 match module.imports.get(import_id).kind {
                     ImportKind::Function(fn_id) => fn_id,
@@ -641,17 +638,11 @@ mod tests {
             })
             .collect();
 
-        let fn_id = module.exports.iter().find_map(|export| {
-            if export.name == "test" {
-                Some(export.item)
-            } else {
-                None
-            }
-        });
-        let fn_id = match fn_id.unwrap() {
-            ExportItem::Function(fn_id) => fn_id,
-            _ => unreachable!(),
-        };
+        let fn_id = module
+            .exports
+            .iter()
+            .find_map(|export| (export.name == "test").then_some(export.item));
+        let ExportItem::Function(fn_id) = fn_id.unwrap() else { unreachable!() };
 
         ProcessingState::transform_local_fn(&mut module, &functions_returning_ref, true, fn_id)
             .unwrap();

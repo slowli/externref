@@ -1,9 +1,9 @@
 [package]
 name = "externref-cli"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Alex Ostrovski <ostrovski.alex@gmail.com>"]
 edition = "2021"
-rust-version = "1.64"
+rust-version = "1.66"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
 keywords = ["externref", "anyref", "wasm"]
@@ -20,10 +20,13 @@ anyhow = "1.0.66"
 clap = { version = "4.0.32", features = ["derive", "wrap_help"] }
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"], optional = true }
 
-externref = { version = "0.1.0", path = "../..", features = ["processor"] }
+[dependencies.externref]
+version = "0.2.0"
+path = "../lib"
+features = ["processor"]
 
 [dev-dependencies]
-term-transcript = { version = "0.3.0-beta.1", features = ["portable-pty"] }
+term-transcript = { version = "0.3.0-beta.2", features = ["portable-pty"] }
 
 [features]
 default = ["tracing"]
