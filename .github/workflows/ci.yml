@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 env:
-  msrv: 1.64.0
+  msrv: 1.66.0
   nightly: nightly-2023-03-19
   binaryen: version_110
 
