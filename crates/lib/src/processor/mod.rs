@@ -101,9 +101,7 @@ impl<'a> Processor<'a> {
     #[cfg_attr(feature = "tracing", tracing::instrument(skip_all, err))]
     pub fn process(&self, module: &mut Module) -> Result<(), Error> {
         let raw_section = module.customs.remove_raw(Function::CUSTOM_SECTION_NAME);
-        let raw_section = if let Some(section) = raw_section {
-            section
-        } else {
+        let Some(raw_section) = raw_section else {
             #[cfg(feature = "tracing")]
             tracing::info!("module contains no custom section; skipping");
             return Ok(());

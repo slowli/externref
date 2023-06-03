@@ -31,9 +31,7 @@ fn check_abi(
 
 fn attr_expr(attrs: &[Attribute], name: &str) -> Result<Option<Expr>, SynError> {
     let attr = attrs.iter().find(|attr| attr.path().is_ident(name));
-    let attr = if let Some(attr) = attr {
-        attr
-    } else {
+    let Some(attr) = attr else {
         return Ok(None);
     };
 
@@ -415,9 +413,8 @@ impl Imports {
             .attrs
             .iter()
             .find(|attr| attr.path().is_ident("link"));
-        let link_attr = match link_attr {
-            Some(attr) => attr,
-            None => return Err(SynError::new_spanned(module, NO_ATTR_MSG)),
+        let Some(link_attr) = link_attr else {
+            return Err(SynError::new_spanned(module, NO_ATTR_MSG));
         };
 
         let module_name = if matches!(link_attr.meta, Meta::List(_)) {
