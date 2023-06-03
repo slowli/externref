@@ -233,7 +233,6 @@ name = "externref"
 version = "0.2.0"
 dependencies = [
  "anyhow",
- "externref-macro",
  "tracing",
  "walrus",
 ]
@@ -247,15 +246,6 @@ dependencies = [
  "externref",
  "term-transcript",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "externref-macro"
-version = "0.2.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.18",
 ]
 
 [[package]]

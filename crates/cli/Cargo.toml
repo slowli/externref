@@ -23,6 +23,7 @@ tracing-subscriber = { version = "0.3.16", features = ["env-filter"], optional =
 [dependencies.externref]
 version = "0.2.0"
 path = "../lib"
+default-features = false
 features = ["processor"]
 
 [dev-dependencies]
