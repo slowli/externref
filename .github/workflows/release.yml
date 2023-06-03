@@ -50,7 +50,7 @@ jobs:
       - name: Cache cargo build
         uses: actions/cache@v3
         with:
-          path: cli/target
+          path: crates/cli/target
           key: ${{ runner.os }}-release-cargo-${{ hashFiles('crates/cli/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-release-cargo
 

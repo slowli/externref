@@ -1,15 +1,15 @@
 [package]
 name = "externref-test"
 version = "0.0.0"
-edition = "2021"
+edition.workspace = true
 publish = false
 description = "End-to-end test crate for `externref`"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-[dependencies]
-externref = { version = "0.2.0", path = ".." }
+[dependencies.externref]
+path = "../crates/lib"
 
 [dev-dependencies]
 anyhow = "1.0.66"
@@ -21,4 +21,6 @@ tracing-capture = "0.1.0"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
 wasmtime = "9.0.2"
 
-externref = { version = "0.2.0", path = "..", features = ["processor", "tracing"] }
+[dev-dependencies.externref]
+path = "../crates/lib"
+features = ["processor", "tracing"]

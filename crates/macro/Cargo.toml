@@ -1,15 +1,15 @@
 [package]
 name = "externref-macro"
-version = "0.2.0"
-authors = ["Alex Ostrovski <ostrovski.alex@gmail.com>"]
-edition = "2021"
-rust-version = "1.64"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 readme = "README.md"
-license = "MIT OR Apache-2.0"
 keywords = ["externref", "anyref", "wasm"]
 categories = ["wasm", "development-tools::ffi"]
 description = "Proc macro for `externref`"
-repository = "https://github.com/slowli/externref"
 
 [badges]
 maintenance = { status = "experimental" }

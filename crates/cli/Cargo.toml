@@ -20,7 +20,10 @@ anyhow = "1.0.66"
 clap = { version = "4.0.32", features = ["derive", "wrap_help"] }
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"], optional = true }
 
-externref = { version = "0.2.0", path = "../..", features = ["processor"] }
+[dependencies.externref]
+version = "0.2.0"
+path = "../lib"
+features = ["processor"]
 
 [dev-dependencies]
 term-transcript = { version = "0.3.0-beta.1", features = ["portable-pty"] }

@@ -1,0 +1,46 @@
+[package]
+name = "externref"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["externref", "anyref", "wasm"]
+categories = ["wasm", "development-tools::ffi"]
+description = "Low-cost reference type shims for WASM modules"
+
+[package.metadata.docs.rs]
+all-features = true
+# Set `docsrs` to enable unstable `doc(cfg(...))` attributes.
+rustdoc-args = ["--cfg", "docsrs"]
+
+[badges]
+maintenance = { status = "experimental" }
+
+[dependencies]
+externref-macro = { version = "0.2.0", path = "../macro", optional = true }
+# Processor dependencies
+anyhow = { version = "1.0.58", optional = true }
+walrus = { version = "0.19.0", optional = true }
+# Enables tracing during module processing
+tracing = { version = "0.1.37", optional = true }
+
+[dev-dependencies]
+assert_matches = "1.5.0"
+doc-comment = "0.3.3"
+version-sync = "0.9.4"
+wat = "1.0.46"
+
+[features]
+default = ["macro"]
+# Re-exports the `externref` macro
+macro = ["externref-macro"]
+# Enables WASM module processing logic (the `processor` module)
+processor = ["anyhow", "walrus"]
+
+[[test]]
+name = "processor"
+path = "tests/processor.rs"
+required-features = ["processor"]
