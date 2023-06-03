@@ -3,6 +3,7 @@
 use anyhow::{anyhow, Context};
 use assert_matches::assert_matches;
 use once_cell::sync::Lazy;
+use test_casing::{test_casing, Product};
 use tracing::{subscriber::DefaultGuard, Level, Subscriber};
 use tracing_capture::{CaptureLayer, SharedStorage, Storage};
 use tracing_subscriber::{
@@ -20,7 +21,16 @@ use crate::compile::compile;
 
 type RefAssertion = fn(Caller<'_, Data>, &Table);
 
+static UNOPTIMIZED_MODULE: Lazy<Vec<u8>> = Lazy::new(|| compile(false));
 static OPTIMIZED_MODULE: Lazy<Vec<u8>> = Lazy::new(|| compile(true));
+
+fn module_bytes(is_optimized: bool) -> &'static [u8] {
+    if is_optimized {
+        &OPTIMIZED_MODULE
+    } else {
+        &UNOPTIMIZED_MODULE
+    }
+}
 
 fn create_fmt_subscriber() -> impl Subscriber + for<'a> LookupSpan<'a> {
     FmtSubscriber::builder()
@@ -171,12 +181,13 @@ fn create_linker(engine: &Engine) -> Linker<Data> {
     linker
 }
 
-fn test_transform_after_optimization(test_export: &str) {
+#[test_casing(4, Product(([false, true], ["test_export", "test_export_with_casts"])))]
+fn transform_module(is_optimized: bool, test_export: &str) {
     let (_guard, storage) = enable_tracing_assertions();
 
     let module = Processor::default()
         .set_drop_fn("test", "drop_ref")
-        .process_bytes(&OPTIMIZED_MODULE)
+        .process_bytes(module_bytes(is_optimized))
         .unwrap();
     let module = Module::new(&Engine::default(), module).unwrap();
     let linker = create_linker(module.engine());
@@ -214,16 +225,6 @@ fn test_transform_after_optimization(test_export: &str) {
     for i in 0..size {
         assert_matches!(externrefs.get(&mut store, i).unwrap(), Val::ExternRef(None));
     }
-}
-
-#[test]
-fn transform_after_optimization() {
-    test_transform_after_optimization("test_export");
-}
-
-#[test]
-fn transform_after_optimization_with_casts() {
-    test_transform_after_optimization("test_export_with_casts");
 }
 
 fn assert_tracing_output(storage: &Storage) {
@@ -288,12 +289,12 @@ fn assert_tracing_output(storage: &Storage) {
     );
 }
 
-#[test]
-fn null_references() {
+#[test_casing(2, [false, true])]
+fn null_references(is_optimized: bool) {
     enable_tracing();
 
     let module = Processor::default()
-        .process_bytes(&OPTIMIZED_MODULE)
+        .process_bytes(module_bytes(is_optimized))
         .unwrap();
     let module = Module::new(&Engine::default(), module).unwrap();
     let linker = create_linker(module.engine());
