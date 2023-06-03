@@ -25,4 +25,4 @@ syn = { version = "2.0", features = ["full"] }
 [dev-dependencies]
 syn = { version = "2.0", features = ["extra-traits"] }
 trybuild = "1.0.71"
-version-sync = "0.9.4"
+version-sync.workspace = true
