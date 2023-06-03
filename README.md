@@ -41,7 +41,7 @@ Add this to your `Crate.toml`:
 
 ```toml
 [dependencies]
-externref = "0.1.0"
+externref = "0.2.0"
 ```
 
 1. Use `Resource`s as arguments / return results for imported and/or exported functions

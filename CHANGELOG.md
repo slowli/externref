@@ -5,6 +5,8 @@ The project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## 0.2.0 - 2023-06-03
+
 ### Added
 
 - Support upcasting and downcasting of `Resource`s.
@@ -14,12 +16,12 @@ The project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html)
 - Support re-exporting the crate by adding an optional `crate` parameter
   to the `#[externref]` attribute, e.g. `#[externref(crate = "other_crate::_externref")]`
   where `other_crate` defines `pub use externref as _externref`.
-- CLI: add a command-line application for transforming WASM modules, and the Docker image
+- **CLI:** add a command-line application for transforming WASM modules, and the Docker image
   with this application.
 
 ### Changed
 
-- Macro: update `syn` dependency to 2.0.
+- **Macro:** update `syn` dependency to 2.0.
 - Bump minimum supported Rust version to 1.64.
 
 ### Fixed

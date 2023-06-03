@@ -1,6 +1,6 @@
 [package]
 name = "externref"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Alex Ostrovski <ostrovski.alex@gmail.com>"]
 edition = "2021"
 rust-version = "1.64"
@@ -20,7 +20,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 maintenance = { status = "experimental" }
 
 [dependencies]
-externref-macro = { version = "0.1.0", path = "crates/macro", optional = true }
+externref-macro = { version = "0.2.0", path = "crates/macro", optional = true }
 # Processor dependencies
 anyhow = { version = "1.0.58", optional = true }
 walrus = { version = "0.19.0", optional = true }

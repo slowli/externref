@@ -146,7 +146,7 @@
 
 // Documentation settings.
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![doc(html_root_url = "https://docs.rs/externref/0.1.0")]
+#![doc(html_root_url = "https://docs.rs/externref/0.2.0")]
 // Linter settings.
 #![warn(missing_debug_implementations, missing_docs, bare_trait_objects)]
 #![warn(clippy::all, clippy::pedantic)]
