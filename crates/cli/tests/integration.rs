@@ -7,6 +7,8 @@ use term_transcript::{
     test::TestConfig,
     ExitStatus, PtyCommand, ShellOptions,
 };
+#[cfg(feature = "tracing")]
+use test_casing::{decorate, decorators::Retry};
 
 fn template() -> Template {
     Template::new(TemplateOptions {
@@ -28,6 +30,7 @@ fn test_config() -> TestConfig<PtyCommand> {
 
 #[cfg(feature = "tracing")]
 #[test]
+#[decorate(Retry::times(3))] // sometimes, the captured output includes `>` from the input
 fn cli_with_tracing() {
     // The WASM module is taken from the end-to-end test. We check it into the version control
     // in order for this test to be autonomous.

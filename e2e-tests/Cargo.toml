@@ -21,6 +21,11 @@ tracing-capture = "0.1.0"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
 wasmtime = "9.0.2"
 
+[dev-dependencies.test-casing]
+version = "0.1.0"
+git = "https://github.com/slowli/test-casing"
+rev = "941fe0818d047824693142fe39dc8b2ec5fd4b59"
+
 [dev-dependencies.externref]
 path = "../crates/lib"
 features = ["processor", "tracing"]
