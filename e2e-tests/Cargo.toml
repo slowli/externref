@@ -19,7 +19,7 @@ predicates = { version = "3.0.1", default-features = false }
 tracing.workspace = true
 tracing-capture = "0.1.0"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
-wasmtime = "10.0.1"
+wasmtime = "11.0.1"
 
 [dev-dependencies.test-casing]
 version = "0.1.0"
