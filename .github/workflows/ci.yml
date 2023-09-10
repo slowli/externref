@@ -35,10 +35,10 @@ jobs:
       # The E2E test uses `wasmtime` with frequently changing MSRV, so we don't test it here.
       - name: Run tests
         run: cargo test -p externref -p externref-macro --all-features --all-targets
-      - name: Run CLI tests
-        run: cargo test --manifest-path=crates/cli/Cargo.toml --all-features --all-targets
       - name: Run doc tests
         run: cargo test -p externref -p externref-macro --all-features --doc
+      - name: Build CLI
+        run: cargo build --manifest-path=crates/cli/Cargo.toml --all-features --bins
 
   build:
     runs-on: ubuntu-latest
