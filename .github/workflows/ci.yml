@@ -19,14 +19,9 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.msrv }}
-          override: true
-      - name: Generate lockfile
-        uses: actions-rs/cargo@v1
-        with:
-          command: generate-lockfile
 
       - name: Cache cargo build
         uses: actions/cache@v3
@@ -39,20 +34,11 @@ jobs:
 
       # The E2E test uses `wasmtime` with frequently changing MSRV, so we don't test it here.
       - name: Run tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: -p externref -p externref-macro --all-features --all-targets
+        run: cargo test -p externref -p externref-macro --all-features --all-targets
       - name: Run CLI tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --manifest-path=crates/cli/Cargo.toml --all-features --all-targets
+        run: cargo test --manifest-path=crates/cli/Cargo.toml --all-features --all-targets
       - name: Run doc tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: -p externref -p externref-macro --all-features --doc
+        run: cargo test -p externref -p externref-macro --all-features --doc
 
   build:
     runs-on: ubuntu-latest
@@ -61,21 +47,16 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
-          override: true
-          target: wasm32-unknown-unknown
+          targets: wasm32-unknown-unknown
           components: rustfmt, clippy
       - name: Install wasm-opt
         run: |
           wget -q -O binaryen.tar.gz https://github.com/WebAssembly/binaryen/releases/download/$binaryen/binaryen-$binaryen-x86_64-linux.tar.gz && \
           tar xf binaryen.tar.gz && \
           sudo install "binaryen-$binaryen/bin/wasm-opt" /usr/local/bin
-      - name: Generate lockfile
-        uses: actions-rs/cargo@v1
-        with:
-          command: generate-lockfile
 
       - name: Cache cargo build
         uses: actions/cache@v3
@@ -87,63 +68,29 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo
 
       - name: Format
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+        run: cargo fmt --all -- --check
       - name: Format CLI
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --manifest-path=crates/cli/Cargo.toml -- --check
+        run: cargo fmt --manifest-path=crates/cli/Cargo.toml -- --check
 
       - name: Clippy
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          name: "Clippy: all features"
-          args: --workspace --all-features --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-features --all-targets -- -D warnings
       - name: Clippy (no features)
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          name: "Clippy: no features"
-          args: -p externref --no-default-features --lib -- -D warnings
+        run: cargo clippy -p externref --no-default-features --lib -- -D warnings
       - name: Clippy (processor)
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          name: "Clippy: features=processor"
-          args: -p externref --no-default-features --features=processor --lib -- -D warnings
+        run: cargo clippy -p externref --no-default-features --features=processor --lib -- -D warnings
       - name: Clippy CLI
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          name: "Clippy: CLI"
-          args: --manifest-path=crates/cli/Cargo.toml --all-features --all-targets -- -D warnings
+        run: cargo clippy --manifest-path=crates/cli/Cargo.toml --all-features --all-targets -- -D warnings
 
       # Build the E2E crate first to speed up its testing.
       - name: Build E2E test crate
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: -p externref-test --lib --target wasm32-unknown-unknown --profile wasm
+        run: cargo build -p externref-test --lib --target wasm32-unknown-unknown --profile wasm
 
       - name: Run tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --workspace --all-features --all-targets
+        run: cargo test --workspace --all-features --all-targets
       - name: Run CLI tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --manifest-path=crates/cli/Cargo.toml --all-features --all-targets
+        run: cargo test --manifest-path=crates/cli/Cargo.toml --all-features --all-targets
       - name: Run doc tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --workspace --all-features --doc
+        run: cargo test --workspace --all-features --doc
 
   build-docker:
     needs:
@@ -249,15 +196,9 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.nightly }}
-          profile: minimal
-          override: true
-      - name: Generate lockfile
-        uses: actions-rs/cargo@v1
-        with:
-          command: generate-lockfile
 
       - name: Cache cargo build
         uses: actions/cache@v3
