@@ -57,6 +57,11 @@ jobs:
           wget -q -O binaryen.tar.gz https://github.com/WebAssembly/binaryen/releases/download/$binaryen/binaryen-$binaryen-x86_64-linux.tar.gz && \
           tar xf binaryen.tar.gz && \
           sudo install "binaryen-$binaryen/bin/wasm-opt" /usr/local/bin
+      - name: Install cargo-deny
+        uses: baptiste0928/cargo-install@v2
+        with:
+          crate: cargo-deny
+          version: "^0.14"
 
       - name: Cache cargo build
         uses: actions/cache@v3
@@ -80,6 +85,11 @@ jobs:
         run: cargo clippy -p externref --no-default-features --features=processor --lib -- -D warnings
       - name: Clippy CLI
         run: cargo clippy --manifest-path=crates/cli/Cargo.toml --all-features --all-targets -- -D warnings
+
+      - name: Check dependencies
+        run: cargo deny --all-features check
+      - name: Check CLI dependencies
+        run: (cd crates/cli; cargo deny --all-features check)
 
       # Build the E2E crate first to speed up its testing.
       - name: Build E2E test crate

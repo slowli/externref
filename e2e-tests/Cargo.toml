@@ -2,6 +2,7 @@
 name = "externref-test"
 version = "0.0.0"
 edition.workspace = true
+license.workspace = true
 publish = false
 description = "End-to-end test crate for `externref`"
 
