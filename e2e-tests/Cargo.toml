@@ -2,6 +2,7 @@
 name = "externref-test"
 version = "0.0.0"
 edition.workspace = true
+license.workspace = true
 publish = false
 description = "End-to-end test crate for `externref`"
 
@@ -16,15 +17,11 @@ anyhow.workspace = true
 assert_matches.workspace = true
 once_cell.workspace = true
 predicates = { version = "3.0.1", default-features = false }
+test-casing = "0.1.0"
 tracing.workspace = true
 tracing-capture = "0.1.0"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
-wasmtime = "10.0.1"
-
-[dev-dependencies.test-casing]
-version = "0.1.0"
-git = "https://github.com/slowli/test-casing"
-rev = "941fe0818d047824693142fe39dc8b2ec5fd4b59"
+wasmtime = "12.0.1"
 
 [dev-dependencies.externref]
 path = "../crates/lib"

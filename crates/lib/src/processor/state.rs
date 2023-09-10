@@ -642,7 +642,9 @@ mod tests {
             .exports
             .iter()
             .find_map(|export| (export.name == "test").then_some(export.item));
-        let ExportItem::Function(fn_id) = fn_id.unwrap() else { unreachable!() };
+        let ExportItem::Function(fn_id) = fn_id.unwrap() else {
+            unreachable!()
+        };
 
         ProcessingState::transform_local_fn(&mut module, &functions_returning_ref, true, fn_id)
             .unwrap();

@@ -2,7 +2,6 @@
 
 [![Build Status](https://github.com/slowli/externref/workflows/CI/badge.svg?branch=main)](https://github.com/slowli/externref/actions)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue)](https://github.com/slowli/externref#license)
-![rust 1.66+ required](https://img.shields.io/badge/rust-1.66+-blue.svg?label=Required%20Rust)
 
 This crate provides command-line interface for [`externref`]. It allows transforming
 WASM modules that use `externref` shims to use real `externref` types.
@@ -29,6 +28,11 @@ Alternatively, you may use the app Docker image [as described below](#using-dock
 or download a pre-built app binary for popular targets (x86_64 for Linux / macOS / Windows
 and AArch64 for macOS)
 from [GitHub Releases](https://github.com/slowli/externref/releases).
+
+### Minimum supported Rust version
+
+The crate supports the latest stable Rust version. It may support previous stable Rust versions,
+but this is not guaranteed.
 
 ## Usage
 
