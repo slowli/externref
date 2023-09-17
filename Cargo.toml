@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/lib", "crates/macro", "e2e-tests"]
+members = ["crates/cli", "crates/lib", "crates/macro", "e2e-tests"]
 resolver = "2"
 
 [workspace.package]
@@ -26,4 +26,11 @@ inherits = "release"
 panic = "abort"
 codegen-units = 1
 opt-level = "z" # Optimize for size, rather than speed
+lto = true
+
+# Profile for workspace executables
+[profile.executable]
+inherits = "release"
+strip = true
+codegen-units = 1
 lto = true
