@@ -26,8 +26,7 @@ jobs:
       - name: Cache cargo build
         uses: actions/cache@v3
         with:
-          path: |
-            target/
+          path: target
           key: ${{ runner.os }}-msrv-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ runner.os }}-msrv-cargo
 
@@ -63,16 +62,12 @@ jobs:
       - name: Cache cargo build
         uses: actions/cache@v3
         with:
-          path: |
-            target/
-            crates/cli/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          path: target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo
 
       - name: Format
         run: cargo fmt --all -- --check
-      - name: Format CLI
-        run: cargo fmt --manifest-path=crates/cli/Cargo.toml -- --check
 
       - name: Clippy
         run: cargo clippy --workspace --all-features --all-targets -- -D warnings
@@ -80,13 +75,9 @@ jobs:
         run: cargo clippy -p externref --no-default-features --lib -- -D warnings
       - name: Clippy (processor)
         run: cargo clippy -p externref --no-default-features --features=processor --lib -- -D warnings
-      - name: Clippy CLI
-        run: cargo clippy --manifest-path=crates/cli/Cargo.toml --all-features --all-targets -- -D warnings
 
       - name: Check dependencies
         run: cargo deny --all-features check
-      - name: Check CLI dependencies
-        run: (cd crates/cli; cargo deny --all-features check)
 
       # Build the E2E crate first to speed up its testing.
       - name: Build E2E test crate
@@ -94,8 +85,6 @@ jobs:
 
       - name: Run tests
         run: cargo test --workspace --all-features --all-targets
-      - name: Run CLI tests
-        run: cargo test --manifest-path=crates/cli/Cargo.toml --all-features --all-targets
       - name: Run doc tests
         run: cargo test --workspace --all-features --doc
 
@@ -115,7 +104,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: target/docker
-          key: ${{ runner.os }}-docker-buildkit-${{ hashFiles('crates/cli/Cargo.lock') }}
+          key: ${{ runner.os }}-docker-buildkit-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ runner.os }}-docker-buildkit
 
       - name: Extract Docker metadata

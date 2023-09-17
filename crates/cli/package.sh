@@ -14,7 +14,8 @@ echo "Packaging externref $VERSION for $TARGET..."
 
 CLI_DIR=$(dirname "$0")
 RELEASE_DIR="$CLI_DIR/release"
-EXECUTABLE="$CLI_DIR/target/$TARGET/release/externref"
+ROOT_DIR="$CLI_DIR/../.."
+EXECUTABLE="$ROOT_DIR/target/$TARGET/executable/externref"
 
 if [[ "$OS" == 'windows-latest' ]]; then
   EXECUTABLE="$EXECUTABLE.exe"
