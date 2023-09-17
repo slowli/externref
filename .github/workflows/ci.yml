@@ -9,7 +9,6 @@ on:
 env:
   msrv: 1.66.0
   nightly: nightly-2023-03-19
-  binaryen: version_110
 
 jobs:
   build-msrv:
@@ -37,56 +36,7 @@ jobs:
         run: cargo test -p externref -p externref-macro --all-features --doc
 
   build:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-          targets: wasm32-unknown-unknown
-          components: rustfmt, clippy
-      - name: Install wasm-opt
-        run: |
-          wget -q -O binaryen.tar.gz https://github.com/WebAssembly/binaryen/releases/download/$binaryen/binaryen-$binaryen-x86_64-linux.tar.gz && \
-          tar xf binaryen.tar.gz && \
-          sudo install "binaryen-$binaryen/bin/wasm-opt" /usr/local/bin
-      - name: Install cargo-deny
-        uses: baptiste0928/cargo-install@v2
-        with:
-          crate: cargo-deny
-          version: "^0.14"
-
-      - name: Cache cargo build
-        uses: actions/cache@v3
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo
-
-      - name: Format
-        run: cargo fmt --all -- --check
-
-      - name: Clippy
-        run: cargo clippy --workspace --all-features --all-targets -- -D warnings
-      - name: Clippy (no features)
-        run: cargo clippy -p externref --no-default-features --lib -- -D warnings
-      - name: Clippy (processor)
-        run: cargo clippy -p externref --no-default-features --features=processor --lib -- -D warnings
-
-      - name: Check dependencies
-        run: cargo deny --all-features check
-
-      # Build the E2E crate first to speed up its testing.
-      - name: Build E2E test crate
-        run: cargo build -p externref-test --lib --target wasm32-unknown-unknown --profile wasm
-
-      - name: Run tests
-        run: cargo test --workspace --all-features --all-targets
-      - name: Run doc tests
-        run: cargo test --workspace --all-features --doc
+    uses: ./.github/workflows/build-reusable.yml
 
   build-docker:
     needs:
