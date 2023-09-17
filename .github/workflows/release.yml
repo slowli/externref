@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     tags: [ "v*" ]
+  workflow_dispatch: {}
 
 defaults:
   run:
@@ -48,22 +49,29 @@ jobs:
       - name: Cache cargo build
         uses: actions/cache@v3
         with:
-          path: crates/cli/target
-          key: ${{ runner.os }}-release-cargo-${{ hashFiles('crates/cli/Cargo.lock') }}
+          path: target
+          key: ${{ runner.os }}-release-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ runner.os }}-release-cargo
 
       - name: Build CLI app
-        run: cargo build --manifest-path=crates/cli/Cargo.toml --release --target=${{ matrix.target }} --all-features --locked
+        run: cargo build -p externref-cli --profile=executable --target=${{ matrix.target }} --all-features --locked
       - name: Package archive
         id: package
-        run: ./crates/cli/package.sh ${REF#"refs/tags/"}
+        run: ./crates/cli/package.sh ${REF#refs/*/}
         env:
           OS: ${{ matrix.os }}
           TARGET: ${{ matrix.target }}
           REF: ${{ github.ref }}
       - name: Publish archive
         uses: softprops/action-gh-release@v1
+        if: github.event_name == 'push'
         with:
           draft: false
           files: ${{ steps.package.outputs.archive }}
           prerelease: ${{ steps.release-type.outputs.type == 'prerelease' }}
+      - name: Attach archive to workflow
+        uses: actions/upload-artifact@v3
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          name: externref-${{ matrix.target }}
+          path: ${{ steps.package.outputs.archive }}

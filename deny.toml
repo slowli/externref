@@ -13,6 +13,8 @@ severity-threshold = "Medium"
 ignore = [
   # `mach` crate is unmaintained; used by `wasmtime` (i.e., only by a dev dependency)
   "RUSTSEC-2020-0168",
+  # Unaligned read in `atty`; requires a custom global allocator which we don't use.
+  "RUSTSEC-2021-0145",
 ]
 
 [licenses]
@@ -36,6 +38,12 @@ allow-wildcard-paths = true
 skip = [
   # `syn` 1.x is still used by `walrus` proc macros
   { name = "syn", version = "^1.0" },
+  # Relied upon by `walrus-macro`; since it's a proc macro dep, duplication is sort of fine
+  { name = "heck", version = "^0.3" },
+]
+skip-tree = [
+  # Relied upon by `tracing` (via `regex`); no fix is possible ATM
+  { name = "regex-automata", version = "^0.1" },
 ]
 
 [sources]
