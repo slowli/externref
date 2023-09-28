@@ -27,6 +27,11 @@ The project consists of the following crates:
 Experimental; it may be the case that the processor produces invalid WASM
 in some corner cases (please report this as an issue if it does).
 
+## Contributing
+
+All contributions are welcome! See [the contributing guide](CONTRIBUTING.md) to help
+you get involved.
+
 ## License
 
 Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE)
