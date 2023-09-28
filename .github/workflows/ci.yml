@@ -136,6 +136,8 @@ jobs:
     needs:
       - build
       - build-msrv
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
 
     steps:
