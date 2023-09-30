@@ -21,7 +21,7 @@ test-casing = "0.1.0"
 tracing.workspace = true
 tracing-capture = "0.1.0"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
-wasmtime = "12.0.2"
+wasmtime = "13.0.0"
 
 [dev-dependencies.externref]
 path = "../crates/lib"
