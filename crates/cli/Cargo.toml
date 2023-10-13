@@ -28,7 +28,7 @@ features = ["processor"]
 
 [dev-dependencies]
 term-transcript = { version = "0.3.0-beta.2", features = ["portable-pty"] }
-test-casing = "0.1.0"
+test-casing = "0.1.1"
 
 [features]
 default = ["tracing"]
