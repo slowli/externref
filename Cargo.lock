@@ -1161,9 +1161,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.67"
+version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d433d9f1a3e8c1263d9456598b16fec66f4acc9a74dacffd35c7bb09b3a1328"
+checksum = "134c189feb4956b20f6f547d2cf727d4c0fe06722b20a0eec87ed445a97f92da"
 dependencies = [
  "unicode-ident",
 ]
@@ -1617,9 +1617,9 @@ dependencies = [
 
 [[package]]
 name = "test-casing"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a368b60fd43dd855b44b15fd27238a569d58b524ef2b5dfdffe013e92e0e0c14"
+checksum = "a1742a35282bbdcc686b7f828b3e5335b1f7ef84682e032a9754a857b0b8fe1a"
 dependencies = [
  "test-casing-macro",
 ]
@@ -1987,9 +1987,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-encoder"
-version = "0.33.2"
+version = "0.34.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34180c89672b3e4825c3a8db4b61a674f1447afd5fe2445b2d22c3d8b6ea086c"
+checksum = "f14a94e06a3e2ed1af4e80cac712fed883142019ebe33c3899fd1b5e8550df9d"
 dependencies = [
  "leb128",
 ]
@@ -2295,21 +2295,21 @@ checksum = "5412bb464066d64c3398c96e6974348f90fa2a55110ad7da3f9295438cd4de84"
 
 [[package]]
 name = "wast"
-version = "66.0.0"
+version = "66.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0da7529bb848d58ab8bf32230fc065b363baee2bd338d5e58c589a1e7d83ad07"
+checksum = "49d1457e95d4b8e1f72bd50f5ed804931f94cf1b5449697255aef466e46fa4b0"
 dependencies = [
  "leb128",
  "memchr",
  "unicode-width",
- "wasm-encoder 0.33.2",
+ "wasm-encoder 0.34.1",
 ]
 
 [[package]]
 name = "wat"
-version = "1.0.75"
+version = "1.0.76"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4780374047c65b6b6e86019093fe80c18b66825eb684df778a4e068282a780e7"
+checksum = "964639e3c731f12b7bf6be78f0b2c3e646321acab18e7cb9f18e44c6720bb4fa"
 dependencies = [
  "wast",
 ]
