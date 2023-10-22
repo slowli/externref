@@ -31,7 +31,7 @@ tracing = { workspace = true, optional = true }
 assert_matches.workspace = true
 doc-comment.workspace = true
 version-sync.workspace = true
-wat = "1.0.76"
+wat = "1.0.77"
 
 [features]
 default = ["macro"]
