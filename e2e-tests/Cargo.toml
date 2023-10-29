@@ -9,19 +9,19 @@ description = "End-to-end test crate for `externref`"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-[dependencies.externref]
-path = "../crates/lib"
+[dependencies]
+externref = { workspace = true, default-features = true }
 
 [dev-dependencies]
 anyhow.workspace = true
 assert_matches.workspace = true
 once_cell.workspace = true
-predicates = { version = "3.0.4", default-features = false }
-test-casing = "0.1.1"
+predicates.workspace = true
+test-casing.workspace = true
 tracing.workspace = true
-tracing-capture = "0.1.0"
-tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
-wasmtime = "13.0.0"
+tracing-capture.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+wasmtime.workspace = true
 
 [dev-dependencies.externref]
 path = "../crates/lib"

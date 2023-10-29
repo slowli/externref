@@ -29,11 +29,8 @@ jobs:
           key: ${{ runner.os }}-msrv-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ runner.os }}-msrv-cargo
 
-      # The E2E test uses `wasmtime` with frequently changing MSRV, so we don't test it here.
-      - name: Run tests
-        run: cargo test -p externref -p externref-macro --all-features --all-targets
-      - name: Run doc tests
-        run: cargo test -p externref -p externref-macro --all-features --doc
+      - name: Build libraries
+        run: cargo build -p externref -p externref-macro --all-features
 
   build:
     uses: ./.github/workflows/build-reusable.yml

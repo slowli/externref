@@ -16,19 +16,16 @@ name = "externref"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1.0.66"
-clap = { version = "4.4.6", features = ["derive", "wrap_help"] }
-tracing-subscriber = { version = "0.3.16", features = ["env-filter"], optional = true }
+anyhow.workspace = true
+clap.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"], optional = true }
 
-[dependencies.externref]
-version = "0.2.0"
-path = "../lib"
-default-features = false
-features = ["processor"]
+# Internal dependencies
+externref = { workspace = true, features = ["processor"] }
 
 [dev-dependencies]
-term-transcript = { version = "0.3.0-beta.2", features = ["portable-pty"] }
-test-casing = "0.1.1"
+term-transcript.workspace = true
+test-casing.workspace = true
 
 [features]
 default = ["tracing"]
