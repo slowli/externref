@@ -18,11 +18,11 @@ maintenance = { status = "experimental" }
 proc-macro = true
 
 [dependencies]
-proc-macro2 = "1.0"
-quote = "1.0"
-syn = { version = "2.0", features = ["full"] }
+proc-macro2.workspace = true
+quote.workspace = true
+syn = { workspace = true, features = ["full"] }
 
 [dev-dependencies]
-syn = { version = "2.0", features = ["extra-traits"] }
-trybuild = "1.0.85"
+syn = { workspace = true, features = ["extra-traits"] }
+trybuild.workspace = true
 version-sync.workspace = true

@@ -20,11 +20,8 @@ anyhow.workspace = true
 clap.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"], optional = true }
 
-[dependencies.externref]
-version = "0.2.0"
-path = "../lib"
-default-features = false
-features = ["processor"]
+# Internal dependencies
+externref = { workspace = true, features = ["processor"] }
 
 [dev-dependencies]
 term-transcript.workspace = true
