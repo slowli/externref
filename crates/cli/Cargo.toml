@@ -16,9 +16,9 @@ name = "externref"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1.0.66"
-clap = { version = "4.4.6", features = ["derive", "wrap_help"] }
-tracing-subscriber = { version = "0.3.16", features = ["env-filter"], optional = true }
+anyhow = "1.0.75"
+clap = { version = "4.4.7", features = ["derive", "wrap_help"] }
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"], optional = true }
 
 [dependencies.externref]
 version = "0.2.0"
@@ -27,7 +27,7 @@ default-features = false
 features = ["processor"]
 
 [dev-dependencies]
-term-transcript = { version = "0.3.0-beta.2", features = ["portable-pty"] }
+term-transcript = { version = "0.3.0", features = ["portable-pty"] }
 test-casing = "0.1.1"
 
 [features]
