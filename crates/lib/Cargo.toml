@@ -20,7 +20,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 maintenance = { status = "experimental" }
 
 [dependencies]
-externref-macro = { version = "0.2.0", path = "../macro", optional = true }
+externref-macro = { version = "=0.2.0", path = "../macro", optional = true }
 # Processor dependencies
 anyhow = { workspace = true, optional = true }
 walrus = { version = "0.20.0", optional = true }
