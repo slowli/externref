@@ -31,8 +31,8 @@ test-casing = "0.1.1"
 tracing-capture = "0.1.0"
 trybuild = "1.0.85"
 version-sync = "0.9.4"
-wasmtime = "14.0.2"
-wat = "1.0.77"
+wasmtime = "14.0.4"
+wat = "1.0.78"
 
 # Internal dependencies
 externref-macro = { version = "=0.2.0", path = "crates/macro" }
