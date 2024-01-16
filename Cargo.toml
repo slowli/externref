@@ -13,9 +13,9 @@ repository = "https://github.com/slowli/externref"
 [workspace.dependencies]
 # General-purpose dependencies
 anyhow = "1.0.79"
-clap = { version = "4.4.16", features = ["derive", "wrap_help"] }
+clap = { version = "4.4.17", features = ["derive", "wrap_help"] }
 once_cell = "1.19.0"
-predicates = { version = "3.0.4", default-features = false }
+predicates = { version = "3.1.0", default-features = false }
 proc-macro2 = "1.0"
 quote = "1.0"
 syn = "2.0"
