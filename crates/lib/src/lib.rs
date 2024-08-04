@@ -33,8 +33,8 @@
 //! # Usage
 //!
 //! 1. Use [`Resource`]s as arguments / return results for imported and/or exported functions
-//!   in a WASM module in place of `externref`s . Reference args (including mutable references)
-//!   and the `Option<_>` wrapper are supported as well.
+//!    in a WASM module in place of `externref`s . Reference args (including mutable references)
+//!    and the `Option<_>` wrapper are supported as well.
 //! 2. Add the `#[externref]` proc macro on the imported / exported functions.
 //! 3. Post-process the generated WASM module with the [`processor`].
 //!
