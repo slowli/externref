@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 readme = "README.md"
 keywords = ["externref", "anyref", "wasm"]
-categories = ["wasm", "development-tools::ffi"]
+categories = ["wasm", "development-tools::ffi", "no-std"]
 description = "Low-cost reference type shims for WASM modules"
 
 [package.metadata.docs.rs]

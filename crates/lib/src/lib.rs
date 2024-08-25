@@ -85,6 +85,12 @@
 //!
 //! # Crate features
 //!
+//! ## `std`
+//!
+//! *(On by default)*
+//!
+//! Enables `std`-specific features, like [`Error`](std::error::Error) implementations for error types.
+//!
 //! ## `processor`
 //!
 //! *(Off by default)*
