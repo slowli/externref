@@ -48,13 +48,13 @@
 
 use walrus::{passes::gc, Module};
 
-mod error;
-mod functions;
-mod state;
-
 pub use self::error::{Error, Location};
 use self::state::ProcessingState;
 use crate::Function;
+
+mod error;
+mod functions;
+mod state;
 
 /// WASM module processor encapsulating processing options.
 #[derive(Debug)]

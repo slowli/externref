@@ -5,9 +5,6 @@
 #![warn(clippy::all, clippy::pedantic)]
 #![allow(clippy::must_use_candidate, clippy::module_name_repetitions)]
 
-use anyhow::{anyhow, ensure, Context};
-use clap::Parser;
-
 use std::{
     fs,
     io::{self, Read as _, Write as _},
@@ -15,6 +12,8 @@ use std::{
     str::FromStr,
 };
 
+use anyhow::{anyhow, ensure, Context};
+use clap::Parser;
 use externref::processor::Processor;
 
 #[derive(Debug, Clone)]

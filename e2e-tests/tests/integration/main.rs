@@ -1,7 +1,10 @@
 //! End-to-end tests for the `externref` macro / processor.
 
+use std::{collections::HashSet, sync::Once};
+
 use anyhow::{anyhow, Context};
 use assert_matches::assert_matches;
+use externref::processor::Processor;
 use once_cell::sync::Lazy;
 use test_casing::{test_casing, Product};
 use tracing::{subscriber::DefaultGuard, Level, Subscriber};
@@ -11,13 +14,9 @@ use tracing_subscriber::{
 };
 use wasmtime::{Caller, Engine, Extern, ExternRef, Linker, Module, Store, Table, Val};
 
-use std::{collections::HashSet, sync::Once};
-
-use externref::processor::Processor;
+use crate::compile::compile;
 
 mod compile;
-
-use crate::compile::compile;
 
 type RefAssertion = fn(Caller<'_, Data>, &Table);
 

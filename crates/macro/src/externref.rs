@@ -1,3 +1,5 @@
+use std::{collections::HashMap, mem};
+
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{
@@ -5,8 +7,6 @@ use syn::{
     FnArg, ForeignItem, GenericArgument, Ident, ItemFn, ItemForeignMod, Lit, LitStr, Meta, PatType,
     Path, PathArguments, Signature, Token, Type, TypePath, Visibility,
 };
-
-use std::{collections::HashMap, mem};
 
 use crate::ExternrefAttrs;
 

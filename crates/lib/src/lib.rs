@@ -159,13 +159,14 @@
 
 use core::{alloc::Layout, marker::PhantomData, mem};
 
+#[cfg(feature = "macro")]
+#[cfg_attr(docsrs, doc(cfg(feature = "macro")))]
+pub use externref_macro::externref;
+
 pub use crate::{
     error::{ReadError, ReadErrorKind},
     signature::{BitSlice, BitSliceBuilder, Function, FunctionKind},
 };
-#[cfg(feature = "macro")]
-#[cfg_attr(docsrs, doc(cfg(feature = "macro")))]
-pub use externref_macro::externref;
 
 mod error;
 #[cfg(feature = "processor")]
