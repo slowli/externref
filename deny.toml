@@ -1,15 +1,11 @@
 # `cargo-deny` configuration.
 
+[output]
 feature-depth = 1
 
 [advisories]
 db-urls = ["https://github.com/rustsec/advisory-db"]
-vulnerability = "deny"
-unmaintained = "deny"
-unsound = "deny"
 yanked = "deny"
-notice = "warn"
-severity-threshold = "Medium"
 ignore = [
   # `mach` crate is unmaintained; used by `wasmtime` (i.e., only by a dev dependency)
   "RUSTSEC-2020-0168",
@@ -18,7 +14,6 @@ ignore = [
 ]
 
 [licenses]
-unlicensed = "deny"
 allow = [
   # Permissive open-source licenses
   "MIT",
@@ -26,9 +21,6 @@ allow = [
   "Apache-2.0 WITH LLVM-exception",
   "Unicode-DFS-2016",
 ]
-copyleft = "deny"
-allow-osi-fsf-free = "neither"
-default = "deny"
 confidence-threshold = 0.8
 
 [bans]

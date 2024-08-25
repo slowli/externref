@@ -8,14 +8,14 @@ on:
 
 env:
   msrv: 1.66.0
-  nightly: nightly-2023-03-19
+  nightly: nightly-2024-07-07
 
 jobs:
   build-msrv:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
@@ -23,7 +23,7 @@ jobs:
           toolchain: ${{ env.msrv }}
 
       - name: Cache cargo build
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: target
           key: ${{ runner.os }}-msrv-cargo-${{ hashFiles('Cargo.lock') }}
@@ -45,10 +45,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Cache Docker build
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: target/docker
           key: ${{ runner.os }}-docker-buildkit-${{ hashFiles('Cargo.lock') }}
@@ -138,7 +138,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
@@ -146,7 +146,7 @@ jobs:
           toolchain: ${{ env.nightly }}
 
       - name: Cache cargo build
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: target
           key: ${{ runner.os }}-document-cargo-${{ hashFiles('Cargo.lock') }}
