@@ -5,6 +5,10 @@ The project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+- Support `no_std` compilation mode for the library.
+
 ## 0.2.0 - 2023-06-03
 
 ### Added
