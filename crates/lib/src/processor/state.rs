@@ -1,13 +1,13 @@
 //! Stateful WASM module processing.
 
-use walrus::{
-    ir, ExportItem, FunctionBuilder, FunctionId, ImportKind, LocalFunction, LocalId, Module,
-    ModuleLocals, ModuleTypes, TypeId, ValType,
-};
-
 use std::{
     collections::{HashMap, HashSet},
     iter, mem,
+};
+
+use walrus::{
+    ir, ExportItem, FunctionBuilder, FunctionId, ImportKind, LocalFunction, LocalId, Module,
+    ModuleLocals, ModuleTypes, TypeId, ValType,
 };
 
 use super::{

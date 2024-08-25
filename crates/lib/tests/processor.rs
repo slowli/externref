@@ -1,10 +1,9 @@
 //! Tests for processor logic.
 
-use walrus::{ExportItem, ImportKind, Module, RawCustomSection, ValType};
-
 use std::path::Path;
 
 use externref::{processor::Processor, BitSlice, Function, FunctionKind};
+use walrus::{ExportItem, ImportKind, Module, RawCustomSection, ValType};
 
 const ARENA_ALLOC: Function<'static> = Function {
     kind: FunctionKind::Import("arena"),

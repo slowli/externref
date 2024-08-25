@@ -44,7 +44,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo
 
       - name: Format
-        run: cargo fmt --all -- --check
+        run: cargo fmt --all -- --check --config imports_granularity=Crate --config group_imports=StdExternalCrate
 
       - name: Clippy
         run: cargo clippy --workspace --all-features --all-targets -- -D warnings

@@ -1,6 +1,22 @@
 //! E2E test for `externref`.
 
+#![cfg_attr(target_arch = "wasm32", no_std)]
+
+extern crate alloc;
+
+use alloc::vec::Vec;
+
 use externref::{externref, Resource};
+
+#[cfg(target_arch = "wasm32")]
+#[global_allocator]
+static ALLOC: dlmalloc::GlobalDlmalloc = dlmalloc::GlobalDlmalloc;
+
+#[cfg(target_arch = "wasm32")]
+#[panic_handler]
+fn handle_panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
 
 pub struct Sender(());
 

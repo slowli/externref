@@ -1,8 +1,11 @@
 //! Function signatures recorded into a custom section of WASM modules.
 
-use std::str;
+use core::str;
 
-use crate::error::{ReadError, ReadErrorKind};
+use crate::{
+    alloc::{format, String},
+    error::{ReadError, ReadErrorKind},
+};
 
 /// Builder for [`BitSlice`]s that can be used in const contexts.
 #[doc(hidden)] // used by macro; not public (yet?)

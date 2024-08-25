@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 readme = "README.md"
 keywords = ["externref", "anyref", "wasm"]
-categories = ["wasm", "development-tools::ffi"]
+categories = ["wasm", "development-tools::ffi", "no-std"]
 description = "Low-cost reference type shims for WASM modules"
 
 [package.metadata.docs.rs]
@@ -35,10 +35,12 @@ wat.workspace = true
 
 [features]
 default = ["macro"]
+# Enables `std`-specific features, like `Error` implementations
+std = []
 # Re-exports the `externref` macro
 macro = ["externref-macro"]
 # Enables WASM module processing logic (the `processor` module)
-processor = ["anyhow", "walrus"]
+processor = ["std", "anyhow", "walrus"]
 
 [[test]]
 name = "processor"

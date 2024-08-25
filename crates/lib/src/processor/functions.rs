@@ -1,13 +1,15 @@
 //! Patched functions for working with `externref`s.
 
+use std::{
+    cmp,
+    collections::{HashMap, HashSet},
+};
+
 use walrus::{
     ir::{self, BinaryOp},
     Function, FunctionBuilder, FunctionId, FunctionKind as WasmFunctionKind, ImportKind,
     InstrLocId, InstrSeqBuilder, LocalFunction, LocalId, Module, ModuleImports, TableId, ValType,
 };
-
-use std::collections::HashSet;
-use std::{cmp, collections::HashMap};
 
 use super::{Error, Processor};
 

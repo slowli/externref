@@ -85,11 +85,17 @@
 //!
 //! # Crate features
 //!
+//! ## `std`
+//!
+//! *(Off by default)*
+//!
+//! Enables `std`-specific features, like [`Error`](std::error::Error) implementations for error types.
+//!
 //! ## `processor`
 //!
 //! *(Off by default)*
 //!
-//! Enables WASM module processing via the [`processor`] module.
+//! Enables WASM module processing via the [`processor`] module. Requires the `std` feature.
 //!
 //! ## `tracing`
 //!
@@ -144,6 +150,7 @@
 //! }
 //! ```
 
+#![cfg_attr(not(feature = "std"), no_std)]
 // Documentation settings.
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc(html_root_url = "https://docs.rs/externref/0.2.0")]
@@ -158,19 +165,28 @@
 
 use core::{alloc::Layout, marker::PhantomData, mem};
 
+#[cfg(feature = "macro")]
+#[cfg_attr(docsrs, doc(cfg(feature = "macro")))]
+pub use externref_macro::externref;
+
+pub use crate::{
+    error::{ReadError, ReadErrorKind},
+    signature::{BitSlice, BitSliceBuilder, Function, FunctionKind},
+};
+
 mod error;
 #[cfg(feature = "processor")]
 #[cfg_attr(docsrs, doc(cfg(feature = "processor")))]
 pub mod processor;
 mod signature;
 
-pub use crate::{
-    error::{ReadError, ReadErrorKind},
-    signature::{BitSlice, BitSliceBuilder, Function, FunctionKind},
-};
-#[cfg(feature = "macro")]
-#[cfg_attr(docsrs, doc(cfg(feature = "macro")))]
-pub use externref_macro::externref;
+// Polyfill for `alloc` types.
+mod alloc {
+    #[cfg(not(feature = "std"))]
+    extern crate alloc as std;
+
+    pub(crate) use std::{format, string::String};
+}
 
 /// `externref` surrogate.
 ///
