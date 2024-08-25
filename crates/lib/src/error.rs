@@ -1,6 +1,8 @@
 //! Errors produced by crate logic.
 
-use std::{error, fmt, str::Utf8Error};
+use core::{fmt, str::Utf8Error};
+
+use crate::alloc::String;
 
 /// Kind of a [`ReadError`].
 #[derive(Debug)]
@@ -46,8 +48,9 @@ impl fmt::Display for ReadError {
     }
 }
 
-impl error::Error for ReadError {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+#[cfg(feature = "std")]
+impl std::error::Error for ReadError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match &self.kind {
             ReadErrorKind::Utf8(err) => Some(err),
             ReadErrorKind::UnexpectedEof => None,

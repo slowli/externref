@@ -1,5 +1,11 @@
 //! E2E test for `externref`.
 
+#![no_std]
+
+extern crate alloc;
+
+use alloc::vec::Vec;
+
 use externref::{externref, Resource};
 
 pub struct Sender(());

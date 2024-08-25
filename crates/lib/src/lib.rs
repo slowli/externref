@@ -144,6 +144,7 @@
 //! }
 //! ```
 
+#![cfg_attr(not(feature = "std"), no_std)]
 // Documentation settings.
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc(html_root_url = "https://docs.rs/externref/0.2.0")]
@@ -158,12 +159,6 @@
 
 use core::{alloc::Layout, marker::PhantomData, mem};
 
-mod error;
-#[cfg(feature = "processor")]
-#[cfg_attr(docsrs, doc(cfg(feature = "processor")))]
-pub mod processor;
-mod signature;
-
 pub use crate::{
     error::{ReadError, ReadErrorKind},
     signature::{BitSlice, BitSliceBuilder, Function, FunctionKind},
@@ -171,6 +166,20 @@ pub use crate::{
 #[cfg(feature = "macro")]
 #[cfg_attr(docsrs, doc(cfg(feature = "macro")))]
 pub use externref_macro::externref;
+
+mod error;
+#[cfg(feature = "processor")]
+#[cfg_attr(docsrs, doc(cfg(feature = "processor")))]
+pub mod processor;
+mod signature;
+
+// Polyfill for `alloc` types.
+mod alloc {
+    #[cfg(not(feature = "std"))]
+    extern crate alloc as std;
+
+    pub(crate) use std::{format, string::String};
+}
 
 /// `externref` surrogate.
 ///

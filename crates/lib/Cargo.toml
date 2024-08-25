@@ -34,7 +34,9 @@ version-sync.workspace = true
 wat.workspace = true
 
 [features]
-default = ["macro"]
+default = ["macro", "std"]
+# Enables `std`-specific features, like `Error` implementations
+std = []
 # Re-exports the `externref` macro
 macro = ["externref-macro"]
 # Enables WASM module processing logic (the `processor` module)
