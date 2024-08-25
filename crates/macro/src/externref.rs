@@ -124,18 +124,23 @@ impl ResourceKind {
     }
 
     fn initialize_for_export(self, arg: &Ident, cr: &Path) -> TokenStream {
-        let method_call = match self.simple_kind() {
-            SimpleResourceKind::Owned => None,
-            SimpleResourceKind::Ref => Some(quote!(.as_ref())),
-            SimpleResourceKind::MutRef => Some(quote!(.as_mut())),
-        };
-        let unwrap = match self {
-            Self::Option(_) => None,
-            Self::Simple(_) => Some(quote!(.expect("null reference passed from host"))),
-        };
-
-        quote! {
-            #cr::Resource::new(#arg) #method_call #unwrap
+        match self {
+            Self::Option(_) => {
+                let method_call = match self.simple_kind() {
+                    SimpleResourceKind::Owned => None,
+                    SimpleResourceKind::Ref => Some(quote!(.as_ref())),
+                    SimpleResourceKind::MutRef => Some(quote!(.as_mut())),
+                };
+                quote!(#cr::Resource::new(#arg) #method_call)
+            }
+            Self::Simple(_) => {
+                let ref_token = match self.simple_kind() {
+                    SimpleResourceKind::Owned => None,
+                    SimpleResourceKind::Ref => Some(quote!(&)),
+                    SimpleResourceKind::MutRef => Some(quote!(&mut)),
+                };
+                quote!(#ref_token #cr::Resource::new_non_null(#arg))
+            }
         }
     }
 
@@ -581,9 +586,7 @@ mod tests {
                     __arg2: *const u8,
                 ) {
                     test_export(
-                        externref::Resource::new(__arg0)
-                            .as_mut()
-                            .expect("null reference passed from host"),
+                        &mut externref::Resource::new_non_null(__arg0),
                         externref::Resource::new(__arg1),
                         __arg2,
                     );
@@ -621,7 +624,7 @@ mod tests {
                     __arg1,
                     __arg2,
                 );
-                externref::Resource::new(__output).expect("null reference passed from host")
+                externref::Resource::new_non_null(__output)
             }
         };
         assert_eq!(wrapper, expected, "{}", quote!(#wrapper));
