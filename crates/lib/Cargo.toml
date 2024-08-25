@@ -40,7 +40,7 @@ std = []
 # Re-exports the `externref` macro
 macro = ["externref-macro"]
 # Enables WASM module processing logic (the `processor` module)
-processor = ["anyhow", "walrus"]
+processor = ["std", "anyhow", "walrus"]
 
 [[test]]
 name = "processor"
