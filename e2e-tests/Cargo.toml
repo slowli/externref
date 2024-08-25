@@ -10,7 +10,10 @@ description = "End-to-end test crate for `externref`"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-externref = { workspace = true, default-features = true }
+externref = { workspace = true, features = ["default"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+dlmalloc = { workspace = true, features = ["global"] }
 
 [dev-dependencies]
 anyhow.workspace = true

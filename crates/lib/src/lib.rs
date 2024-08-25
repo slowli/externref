@@ -87,7 +87,7 @@
 //!
 //! ## `std`
 //!
-//! *(On by default)*
+//! *(Off by default)*
 //!
 //! Enables `std`-specific features, like [`Error`](std::error::Error) implementations for error types.
 //!
@@ -95,7 +95,7 @@
 //!
 //! *(Off by default)*
 //!
-//! Enables WASM module processing via the [`processor`] module.
+//! Enables WASM module processing via the [`processor`] module. Requires the `std` feature.
 //!
 //! ## `tracing`
 //!
