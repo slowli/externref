@@ -6,8 +6,6 @@ use std::{
     process::{Command, Stdio},
 };
 
-const WASM_PROFILE: &str = "wasm";
-
 fn target_dir() -> PathBuf {
     let mut path = env::current_exe().expect("Cannot get path to executing test");
     path.pop();
@@ -17,7 +15,7 @@ fn target_dir() -> PathBuf {
     path
 }
 
-fn wasm_target_dir(target_dir: PathBuf) -> PathBuf {
+fn wasm_target_dir(target_dir: PathBuf, profile: &str) -> PathBuf {
     let mut root_dir = target_dir;
     while !root_dir.join("wasm32-unknown-unknown").is_dir() {
         assert!(
@@ -25,18 +23,22 @@ fn wasm_target_dir(target_dir: PathBuf) -> PathBuf {
             "Cannot find dir for the `wasm32-unknown-unknown` target"
         );
     }
-    root_dir.join("wasm32-unknown-unknown").join(WASM_PROFILE)
+    root_dir.join("wasm32-unknown-unknown").join(profile)
 }
 
-fn compile_wasm() -> PathBuf {
-    let profile = format!("--profile={WASM_PROFILE}");
+fn compile_wasm(profile: &str) -> PathBuf {
+    let profile_arg = if profile == "debug" {
+        "--profile=dev".to_owned() // the debug profile has differing `--profile` and output dir naming
+    } else {
+        format!("--profile={profile}")
+    };
     let mut command = Command::new("cargo");
     command.args([
         "build",
         "--lib",
         "--target",
         "wasm32-unknown-unknown",
-        &profile,
+        &profile_arg,
     ]);
 
     let mut command = command
@@ -49,7 +51,7 @@ fn compile_wasm() -> PathBuf {
         "Compiling WASM module finished abnormally: {exit_status}"
     );
 
-    let wasm_dir = wasm_target_dir(target_dir());
+    let wasm_dir = wasm_target_dir(target_dir(), profile);
     let mut wasm_file = env!("CARGO_PKG_NAME").replace('-', "_");
     wasm_file.push_str(".wasm");
     wasm_dir.join(wasm_file)
@@ -75,15 +77,35 @@ fn optimize_wasm(wasm_file: &Path) -> PathBuf {
     opt_wasm_file
 }
 
-pub fn compile(optimize: bool) -> Vec<u8> {
-    let mut wasm_file = compile_wasm();
-    if optimize {
-        wasm_file = optimize_wasm(&wasm_file);
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum CompilationProfile {
+    Wasm,
+    OptimizedWasm,
+    Debug,
+    Release,
+}
+
+impl CompilationProfile {
+    pub const ALL: [Self; 4] = [Self::Wasm, Self::OptimizedWasm, Self::Debug, Self::Release];
+
+    fn rust_profile(self) -> &'static str {
+        match self {
+            Self::Wasm | Self::OptimizedWasm => "wasm",
+            Self::Debug => "debug",
+            Self::Release => "release",
+        }
     }
-    fs::read(&wasm_file).unwrap_or_else(|err| {
-        panic!(
-            "Error reading file `{}`: {err}",
-            wasm_file.to_string_lossy()
-        )
-    })
+
+    pub fn compile(self) -> Vec<u8> {
+        let mut wasm_file = compile_wasm(self.rust_profile());
+        if matches!(self, Self::OptimizedWasm) {
+            wasm_file = optimize_wasm(&wasm_file);
+        }
+        fs::read(&wasm_file).unwrap_or_else(|err| {
+            panic!(
+                "Error reading file `{}`: {err}",
+                wasm_file.to_string_lossy()
+            )
+        })
+    }
 }

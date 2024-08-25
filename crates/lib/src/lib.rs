@@ -83,6 +83,15 @@
 //! [reference type]: https://webassembly.github.io/spec/core/syntax/types.html#reference-types
 //! [`wasm-bindgen`]: https://crates.io/crates/wasm-bindgen
 //!
+//! ## Limitations
+//!
+//! Without compilation optimizations enabled, surrogate `usize`s may be spilled onto the shadow stack (part
+//! of the WASM linear memory used by `rustc` / LLVM when the main WASM stack is insufficient).
+//! This makes replacing these surrogates with `externref`s much harder (essentially, it'd require symbolic execution
+//! of the affected function to find out which locals should be replaced with `externref`s). This behavior should be detected
+//! by the [processor](processor), leading to "incorrectly placed externref guard" errors. Currently,
+//! the only workaround is to enable optimizations for the compiled WASM module.
+//!
 //! # Crate features
 //!
 //! ## `std`
@@ -163,7 +172,7 @@
     clippy::inline_always
 )]
 
-use core::{alloc::Layout, marker::PhantomData, mem};
+use core::{alloc::Layout, fmt, marker::PhantomData, mem};
 
 #[cfg(feature = "macro")]
 #[cfg_attr(docsrs, doc(cfg(feature = "macro")))]
@@ -192,9 +201,14 @@ mod alloc {
 ///
 /// The post-processing logic replaces variables of this type with real `externref`s.
 #[doc(hidden)] // should only be used by macro-generated code
-#[derive(Debug)]
 #[repr(transparent)]
 pub struct ExternRef(usize);
+
+impl fmt::Debug for ExternRef {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("ExternRef").finish_non_exhaustive()
+    }
+}
 
 impl ExternRef {
     /// Guard for imported function wrappers. The processor checks that each transformed function
@@ -215,6 +229,31 @@ impl ExternRef {
         #[cfg(target_arch = "wasm32")]
         guard();
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[link(wasm_import_module = "externref")]
+extern "C" {
+    #[link_name = "get"]
+    fn get_externref(id: usize) -> ExternRef;
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+unsafe fn get_externref(id: usize) -> ExternRef {
+    ExternRef(id)
+}
+
+#[cfg(target_arch = "wasm32")]
+#[link(wasm_import_module = "externref")]
+extern "C" {
+    #[link_name = "insert"]
+    fn insert_externref(id: ExternRef) -> usize;
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[allow(clippy::needless_pass_by_value)]
+unsafe fn insert_externref(id: ExternRef) -> usize {
+    id.0
 }
 
 /// Host resource exposed to WASM.
@@ -240,19 +279,6 @@ impl<T> Resource<T> {
     #[doc(hidden)] // should only be used by macro-generated code
     #[inline(always)]
     pub unsafe fn new(id: ExternRef) -> Option<Self> {
-        #[cfg(target_arch = "wasm32")]
-        #[link(wasm_import_module = "externref")]
-        extern "C" {
-            #[link_name = "insert"]
-            fn insert_externref(id: ExternRef) -> usize;
-        }
-
-        #[cfg(not(target_arch = "wasm32"))]
-        #[allow(clippy::needless_pass_by_value)]
-        unsafe fn insert_externref(id: ExternRef) -> usize {
-            id.0
-        }
-
         let id = insert_externref(id);
         if id == usize::MAX {
             None
@@ -261,6 +287,20 @@ impl<T> Resource<T> {
                 id,
                 _ty: PhantomData,
             })
+        }
+    }
+
+    #[doc(hidden)] // should only be used by macro-generated code
+    #[inline(always)]
+    pub unsafe fn new_non_null(id: ExternRef) -> Self {
+        let id = insert_externref(id);
+        assert!(
+            id != usize::MAX,
+            "Passed null `externref` as non-nullable arg"
+        );
+        Self {
+            id,
+            _ty: PhantomData,
         }
     }
 
@@ -274,19 +314,10 @@ impl<T> Resource<T> {
     #[doc(hidden)] // should only be used by macro-generated code
     #[inline(always)]
     pub unsafe fn raw(this: Option<&Self>) -> ExternRef {
-        #[cfg(target_arch = "wasm32")]
-        #[link(wasm_import_module = "externref")]
-        extern "C" {
-            #[link_name = "get"]
-            fn get_externref(id: usize) -> ExternRef;
-        }
-
-        #[cfg(not(target_arch = "wasm32"))]
-        unsafe fn get_externref(id: usize) -> ExternRef {
-            ExternRef(id)
-        }
-
-        get_externref(this.map_or(usize::MAX, |resource| resource.id))
+        get_externref(match this {
+            None => usize::MAX,
+            Some(resource) => resource.id,
+        })
     }
 
     /// Obtains an `externref` from this resource and drops the resource.
@@ -294,7 +325,10 @@ impl<T> Resource<T> {
     #[inline(always)]
     #[allow(clippy::needless_pass_by_value)]
     pub unsafe fn take_raw(this: Option<Self>) -> ExternRef {
-        Self::raw(this.as_ref())
+        get_externref(match this {
+            None => usize::MAX,
+            Some(resource) => resource.id,
+        })
     }
 
     /// Upcasts this resource to a generic resource.

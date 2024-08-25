@@ -14,20 +14,24 @@ use tracing_subscriber::{
 };
 use wasmtime::{Caller, Engine, Extern, ExternRef, Linker, Module, Store, Table, Val};
 
-use crate::compile::compile;
+use crate::compile::CompilationProfile;
 
 mod compile;
 
 type RefAssertion = fn(Caller<'_, Data>, &Table);
 
-static UNOPTIMIZED_MODULE: Lazy<Vec<u8>> = Lazy::new(|| compile(false));
-static OPTIMIZED_MODULE: Lazy<Vec<u8>> = Lazy::new(|| compile(true));
+fn module_bytes(profile: CompilationProfile) -> &'static [u8] {
+    static UNOPTIMIZED_MODULE: Lazy<Vec<u8>> = Lazy::new(|| CompilationProfile::Wasm.compile());
+    static OPTIMIZED_MODULE: Lazy<Vec<u8>> =
+        Lazy::new(|| CompilationProfile::OptimizedWasm.compile());
+    static DEBUG_MODULE: Lazy<Vec<u8>> = Lazy::new(|| CompilationProfile::Debug.compile());
+    static RELEASE_MODULE: Lazy<Vec<u8>> = Lazy::new(|| CompilationProfile::Release.compile());
 
-fn module_bytes(is_optimized: bool) -> &'static [u8] {
-    if is_optimized {
-        &OPTIMIZED_MODULE
-    } else {
-        &UNOPTIMIZED_MODULE
+    match profile {
+        CompilationProfile::Wasm => &UNOPTIMIZED_MODULE,
+        CompilationProfile::OptimizedWasm => &OPTIMIZED_MODULE,
+        CompilationProfile::Debug => &DEBUG_MODULE,
+        CompilationProfile::Release => &RELEASE_MODULE,
     }
 }
 
@@ -180,13 +184,13 @@ fn create_linker(engine: &Engine) -> Linker<Data> {
     linker
 }
 
-#[test_casing(4, Product(([false, true], ["test_export", "test_export_with_casts"])))]
-fn transform_module(is_optimized: bool, test_export: &str) {
+#[test_casing(8, Product((CompilationProfile::ALL, ["test_export", "test_export_with_casts"])))]
+fn transform_module(profile: CompilationProfile, test_export: &str) {
     let (_guard, storage) = enable_tracing_assertions();
 
     let module = Processor::default()
         .set_drop_fn("test", "drop_ref")
-        .process_bytes(module_bytes(is_optimized))
+        .process_bytes(module_bytes(profile))
         .unwrap();
     let module = Module::new(&Engine::default(), module).unwrap();
     let linker = create_linker(module.engine());
@@ -282,18 +286,32 @@ fn assert_tracing_output(storage: &Storage) {
         }
     });
     let transformed_exports: HashSet<_> = transformed_exports.collect();
+    assert!(
+        transformed_exports.contains("test_nulls"),
+        "{transformed_exports:?}"
+    );
+
+    // Since `test_export` and `test_export_with_casts` have the same logic, they may be optimized
+    // to a single implementation.
+    let contains_export = transformed_exports.contains("test_export");
+    let contains_export_with_casts = transformed_exports.contains("test_export_with_casts");
+    assert!(
+        contains_export || contains_export_with_casts,
+        "{transformed_exports:?}"
+    );
     assert_eq!(
-        transformed_exports,
-        HashSet::from_iter(["test_export", "test_export_with_casts", "test_nulls"])
+        transformed_exports.len(),
+        1 + contains_export as usize + contains_export_with_casts as usize,
+        "{transformed_exports:?}"
     );
 }
 
-#[test_casing(2, [false, true])]
-fn null_references(is_optimized: bool) {
+#[test_casing(4, CompilationProfile::ALL)]
+fn null_references(profile: CompilationProfile) {
     enable_tracing();
 
     let module = Processor::default()
-        .process_bytes(module_bytes(is_optimized))
+        .process_bytes(module_bytes(profile))
         .unwrap();
     let module = Module::new(&Engine::default(), module).unwrap();
     let linker = create_linker(module.engine());
