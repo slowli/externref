@@ -61,11 +61,11 @@ that can process WASM modules with slightly less fine-grained control.
 ### Limitations
 
 If you compile WASM without compilation optimizations, you might get "incorrectly placed externref guard" errors during WASM processing.
-Currently, the only workaround is to enable at least some optimizations for the compiled WASM module, e.g. using a workspace manifest:
+Currently, the only workaround is to switch off some debug info for the compiled WASM module, e.g. using a workspace manifest:
 
 ```toml,no_sync
 [profile.dev.package.your-wasm-module]
-opt-level = 2
+debug = 1 # or "limited" if you're targeting MSRV 1.71+
 ```
 
 These errors shouldn't occur if WASM is compiled in the release mode.

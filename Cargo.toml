@@ -59,4 +59,4 @@ lto = true
 
 # Required to properly inline surrogate `externref`s (see "Limitations" in the crate docs)
 [profile.dev.package.externref-test]
-opt-level = 2
+debug = 1
