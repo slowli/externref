@@ -12,7 +12,9 @@ use tracing_capture::{CaptureLayer, SharedStorage, Storage};
 use tracing_subscriber::{
     fmt::format::FmtSpan, layer::SubscriberExt, registry::LookupSpan, FmtSubscriber,
 };
-use wasmtime::{Caller, Engine, Extern, ExternRef, Linker, Module, Store, Table, Val};
+use wasmtime::{
+    Caller, Engine, Extern, ExternRef, Linker, ManuallyRooted, Module, Ref, Rooted, Store, Table,
+};
 
 use crate::compile::CompilationProfile;
 
@@ -68,7 +70,7 @@ struct Data {
     externrefs: Option<Table>,
     ref_assertions: Vec<RefAssertion>,
     senders: HashSet<String>,
-    dropped: Vec<ExternRef>,
+    dropped: Vec<ManuallyRooted<ExternRef>>,
 }
 
 impl Data {
@@ -88,11 +90,13 @@ impl Data {
         HostSender { key: name }
     }
 
-    fn assert_drops(&self, expected_strings: &[&str]) {
-        let dropped_strings = self
-            .dropped
-            .iter()
-            .filter_map(|drop| drop.data().downcast_ref::<Box<str>>().map(AsRef::as_ref));
+    fn assert_drops(&self, store: &Store<Data>, expected_strings: &[&str]) {
+        let dropped_strings = self.dropped.iter().filter_map(|drop| {
+            drop.data(store)
+                .expect("reference was unexpectedly garbage-collected")
+                .downcast_ref::<Box<str>>()
+                .map(AsRef::as_ref)
+        });
         let dropped_strings: Vec<&str> = dropped_strings.collect();
         assert_eq!(dropped_strings, *expected_strings);
     }
@@ -100,10 +104,10 @@ impl Data {
 
 fn send_message(
     mut ctx: Caller<'_, Data>,
-    resource: Option<ExternRef>,
+    resource: Option<Rooted<ExternRef>>,
     buffer_ptr: u32,
     buffer_len: u32,
-) -> anyhow::Result<Option<ExternRef>> {
+) -> anyhow::Result<Option<Rooted<ExternRef>>> {
     let memory = ctx
         .get_export("memory")
         .and_then(Extern::into_memory)
@@ -115,27 +119,27 @@ fn send_message(
         .context("failed reading WASM memory")?;
     let buffer = String::from_utf8(buffer).context("buffer is not utf-8")?;
 
-    let resource = resource.ok_or_else(|| anyhow!("null reference passed to host"))?;
     let sender = resource
-        .data()
+        .context("null reference passed to host")?
+        .data(&ctx)?
         .downcast_ref::<HostSender>()
         .ok_or_else(|| anyhow!("passed reference has incorrect type"))?;
     assert!(ctx.data().senders.contains(&sender.key));
 
     let bytes = Box::<str>::from(buffer);
-    Ok(Some(ExternRef::new(bytes)))
+    ExternRef::new(&mut ctx, bytes).map(Some)
 }
 
-fn message_len(resource: Option<ExternRef>) -> anyhow::Result<u32> {
-    if let Some(resource) = resource {
-        let str = resource
-            .data()
-            .downcast_ref::<Box<str>>()
-            .ok_or_else(|| anyhow!("passed reference has incorrect type"))?;
-        Ok(u32::try_from(str.len()).unwrap())
-    } else {
-        Ok(0)
-    }
+fn message_len(ctx: Caller<'_, Data>, resource: Option<Rooted<ExternRef>>) -> anyhow::Result<u32> {
+    let Some(resource) = resource else {
+        return Ok(0);
+    };
+    let str = resource
+        .data(&ctx)
+        .context("passed reference is garbage-collected")?
+        .downcast_ref::<Box<str>>()
+        .context("passed reference has incorrect type")?;
+    Ok(u32::try_from(str.len()).unwrap())
 }
 
 fn inspect_refs(mut ctx: Caller<'_, Data>) {
@@ -148,24 +152,26 @@ fn assert_refs(mut ctx: Caller<'_, Data>, table: &Table, buffers_liveness: &[boo
     let size = table.size(&ctx);
     assert_eq!(size, 1 + buffers_liveness.len() as u32);
     let refs: Vec<_> = (0..size)
-        .map(|idx| table.get(&mut ctx, idx).unwrap().unwrap_externref())
+        .map(|idx| table.get(&mut ctx, idx).unwrap())
         .collect();
+    let refs: Vec<_> = refs.iter().map(Ref::unwrap_extern).collect();
 
     let sender_ref = refs[0].as_ref().unwrap();
-    assert!(sender_ref.data().is::<HostSender>());
+    assert!(sender_ref.data(&ctx).unwrap().is::<HostSender>());
 
     for (buffer_ref, &live) in refs[1..].iter().zip(buffers_liveness) {
         if live {
             let buffer_ref = buffer_ref.as_ref().unwrap();
-            assert!(buffer_ref.data().is::<Box<str>>());
+            assert!(buffer_ref.data(&ctx).unwrap().is::<Box<str>>());
         } else {
             assert!(buffer_ref.is_none());
         }
     }
 }
 
-fn drop_ref(mut ctx: Caller<'_, Data>, dropped: Option<ExternRef>) {
+fn drop_ref(mut ctx: Caller<'_, Data>, dropped: Option<Rooted<ExternRef>>) {
     let dropped = dropped.expect("drop fn called with null ref");
+    let dropped = dropped.to_manually_rooted(&mut ctx).unwrap();
     ctx.data_mut().dropped.push(dropped);
 }
 
@@ -211,22 +217,21 @@ fn transform_module(profile: CompilationProfile, test_export: &str) {
     store.data_mut().externrefs = Some(externrefs);
 
     let exported_fn = instance
-        .get_typed_func::<Option<ExternRef>, ()>(&mut store, test_export)
+        .get_typed_func::<Rooted<ExternRef>, ()>(&mut store, test_export)
         .unwrap();
     let sender = store.data_mut().push_sender("sender");
-    exported_fn
-        .call(&mut store, Some(ExternRef::new(sender)))
-        .unwrap();
+    let sender = ExternRef::new(&mut store, sender).unwrap();
+    exported_fn.call(&mut store, sender).unwrap();
 
     store
         .data()
-        .assert_drops(&["test", "some other string", "42"]);
+        .assert_drops(&store, &["test", "some other string", "42"]);
 
     store.gc();
     let size = externrefs.size(&store);
     assert_eq!(size, 4); // sender + 3 buffers
     for i in 0..size {
-        assert_matches!(externrefs.get(&mut store, i).unwrap(), Val::ExternRef(None));
+        assert_matches!(externrefs.get(&mut store, i).unwrap(), Ref::Extern(None));
     }
 }
 
@@ -319,11 +324,10 @@ fn null_references(profile: CompilationProfile) {
     let instance = linker.instantiate(&mut store, &module).unwrap();
 
     let test_fn = instance
-        .get_typed_func::<Option<ExternRef>, ()>(&mut store, "test_nulls")
+        .get_typed_func::<Option<Rooted<ExternRef>>, ()>(&mut store, "test_nulls")
         .unwrap();
     let sender = store.data_mut().push_sender("sender");
-    test_fn
-        .call(&mut store, Some(ExternRef::new(sender)))
-        .unwrap();
+    let sender = ExternRef::new(&mut store, sender).unwrap();
+    test_fn.call(&mut store, Some(sender)).unwrap();
     test_fn.call(&mut store, None).unwrap();
 }
