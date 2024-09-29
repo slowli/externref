@@ -18,7 +18,7 @@ Add this to your `Crate.toml`:
 
 ```toml
 [dependencies]
-externref-macro = "0.2.0"
+externref-macro = "0.3.0-beta.1"
 ```
 
 Note that the `externref` crate re-exports the proc macro if the `macro` crate feature
