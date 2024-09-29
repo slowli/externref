@@ -46,7 +46,7 @@
 //! # Ok::<_, externref::processor::Error>(())
 //! ```
 
-use walrus::{passes::gc, Module};
+use walrus::{passes::gc, Module, RefType, ValType};
 
 pub use self::error::{Error, Location};
 use self::state::ProcessingState;
@@ -55,6 +55,9 @@ use crate::Function;
 mod error;
 mod functions;
 mod state;
+
+/// Externref type as a constant.
+const EXTERNREF: ValType = ValType::Ref(RefType::Externref);
 
 /// WASM module processor encapsulating processing options.
 #[derive(Debug)]

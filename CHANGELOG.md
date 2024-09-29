@@ -5,9 +5,17 @@ The project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## 0.3.0-beta.1 - 2024-09-29
+
 ### Added
 
 - Support `no_std` compilation mode for the library.
+- Explain guard detection errors and provide more specific instructions on how to avoid them
+  (e.g., use `debug = 1` in the profile config).
+
+### Changed
+
+- Bump minimum supported Rust version to 1.76.
 
 ## 0.2.0 - 2023-06-03
 

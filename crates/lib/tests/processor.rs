@@ -3,7 +3,9 @@
 use std::path::Path;
 
 use externref::{processor::Processor, BitSlice, Function, FunctionKind};
-use walrus::{ExportItem, ImportKind, Module, RawCustomSection, ValType};
+use walrus::{ExportItem, ImportKind, Module, RawCustomSection, RefType, ValType};
+
+const EXTERNREF: ValType = ValType::Ref(RefType::Externref);
 
 const ARENA_ALLOC: Function<'static> = Function {
     kind: FunctionKind::Import("arena"),
@@ -57,8 +59,8 @@ fn basic_module() {
         other => panic!("unexpected import type: {other:?}"),
     };
     let function_type = module.types.get(module.funcs.get(import_id).ty());
-    assert_eq!(function_type.params(), [ValType::Externref, ValType::I32]);
-    assert_eq!(function_type.results(), [ValType::Externref]);
+    assert_eq!(function_type.params(), [EXTERNREF, ValType::I32]);
+    assert_eq!(function_type.results(), [EXTERNREF]);
 
     assert!(module.exports.iter().any(|export| {
         export.name == "externrefs" && matches!(export.item, ExportItem::Table(_))
@@ -79,7 +81,7 @@ fn basic_module() {
         })
         .unwrap();
     let function_type = module.types.get(module.funcs.get(export_id).ty());
-    assert_eq!(function_type.params(), [ValType::Externref]);
+    assert_eq!(function_type.params(), [EXTERNREF]);
     assert_eq!(function_type.results(), []);
 
     // Check that the module is well-formed by converting it to bytes and back.
@@ -107,7 +109,7 @@ fn basic_module_with_no_table_export_and_drop_hook() {
         other => panic!("unexpected import type: {other:?}"),
     };
     let function_type = module.types.get(module.funcs.get(import_id).ty());
-    assert_eq!(function_type.params(), [ValType::Externref]);
+    assert_eq!(function_type.params(), [EXTERNREF]);
     assert_eq!(function_type.results(), []);
 
     // Check that the refs table is not exported.

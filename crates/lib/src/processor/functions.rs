@@ -8,10 +8,11 @@ use std::{
 use walrus::{
     ir::{self, BinaryOp},
     Function, FunctionBuilder, FunctionId, FunctionKind as WasmFunctionKind, ImportKind,
-    InstrLocId, InstrSeqBuilder, LocalFunction, LocalId, Module, ModuleImports, TableId, ValType,
+    InstrLocId, InstrSeqBuilder, LocalFunction, LocalId, Module, ModuleImports, RefType, TableId,
+    ValType,
 };
 
-use super::{Error, Processor};
+use super::{Error, Processor, EXTERNREF};
 
 #[derive(Debug)]
 pub(crate) struct ExternrefImports {
@@ -63,7 +64,7 @@ impl PatchedFunctions {
         tracing::instrument(level = "debug", name = "patch_imports", skip_all)
     )]
     pub fn new(module: &mut Module, imports: &ExternrefImports, processor: &Processor<'_>) -> Self {
-        let table_id = module.tables.add_local(0, None, ValType::Externref);
+        let table_id = module.tables.add_local(false, 0, None, RefType::Externref);
         if let Some(table_name) = processor.table_name {
             module.exports.add(table_name, table_id);
         }
@@ -95,7 +96,7 @@ impl PatchedFunctions {
 
             module.funcs.delete(fn_id);
             let drop_fn_id = processor.drop_fn_name.map(|(module_name, name)| {
-                let ty = module.types.add(&[ValType::Externref], &[]);
+                let ty = module.types.add(&[EXTERNREF], &[]);
                 module.add_import_func(module_name, name, ty).0
             });
             fn_mapping.insert(fn_id, Self::patch_drop_fn(module, table_id, drop_fn_id));
@@ -139,9 +140,8 @@ impl PatchedFunctions {
     // free_idx
     // ```
     fn patch_insert_fn(module: &mut Module, table_id: TableId) -> FunctionId {
-        let mut builder =
-            FunctionBuilder::new(&mut module.types, &[ValType::Externref], &[ValType::I32]);
-        let value = module.locals.add(ValType::Externref);
+        let mut builder = FunctionBuilder::new(&mut module.types, &[EXTERNREF], &[ValType::I32]);
+        let value = module.locals.add(EXTERNREF);
         let free_idx = module.locals.add(ValType::I32);
         builder
             .func_body()
@@ -237,8 +237,7 @@ impl PatchedFunctions {
     }
 
     fn patch_get_fn(module: &mut Module, table_id: TableId) -> FunctionId {
-        let mut builder =
-            FunctionBuilder::new(&mut module.types, &[ValType::I32], &[ValType::Externref]);
+        let mut builder = FunctionBuilder::new(&mut module.types, &[ValType::I32], &[EXTERNREF]);
         let idx = module.locals.add(ValType::I32);
         builder
             .func_body()
@@ -246,9 +245,9 @@ impl PatchedFunctions {
             .i32_const(-1)
             .binop(BinaryOp::I32Eq)
             .if_else(
-                ValType::Externref,
+                EXTERNREF,
                 |null_requested| {
-                    null_requested.ref_null(ValType::Externref);
+                    null_requested.ref_null(RefType::Externref);
                 },
                 |elem_requested| {
                     elem_requested.local_get(idx).table_get(table_id);
@@ -274,7 +273,7 @@ impl PatchedFunctions {
         }
         instr_builder
             .local_get(idx)
-            .ref_null(ValType::Externref)
+            .ref_null(RefType::Externref)
             .table_set(table_id);
         builder.finish(vec![idx], &mut module.funcs)
     }

@@ -12,7 +12,7 @@ use walrus::{
 
 use super::{
     functions::{get_offset, ExternrefImports, PatchedFunctions},
-    Error, Location, Processor,
+    Error, Location, Processor, EXTERNREF,
 };
 use crate::{Function, FunctionKind};
 
@@ -151,7 +151,7 @@ impl ProcessingState {
         let mut locals_mapping = HashMap::new();
         for idx in function.externrefs.set_indices() {
             if let Some(arg) = local_fn.args.get_mut(idx) {
-                let new_local = module.locals.add(ValType::Externref);
+                let new_local = module.locals.add(EXTERNREF);
                 locals_mapping.insert(new_local, *arg);
                 *arg = new_local;
             }
@@ -290,7 +290,7 @@ impl RefCallDetector<'_> {
     }
 
     fn replace_local(&mut self, local: &mut LocalId) {
-        let new_local = self.locals.add(ValType::Externref);
+        let new_local = self.locals.add(EXTERNREF);
         self.new_locals.insert(new_local, *local);
         *local = new_local;
     }
@@ -581,7 +581,7 @@ fn patch_type_inner(
                 real_type: new_params[idx],
             });
         }
-        *placement = ValType::Externref;
+        *placement = EXTERNREF;
     }
 
     #[cfg(feature = "tracing")]
@@ -652,7 +652,7 @@ mod tests {
         let ref_locals: Vec<_> = module
             .locals
             .iter()
-            .filter(|local| local.ty() == ValType::Externref)
+            .filter(|local| local.ty() == EXTERNREF)
             .collect();
         assert_eq!(ref_locals.len(), 1, "{ref_locals:?}");
         let ref_local_id = ref_locals[0].id();
