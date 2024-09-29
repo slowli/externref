@@ -173,7 +173,7 @@
     clippy::inline_always
 )]
 
-use core::{alloc::Layout, fmt, marker::PhantomData, mem};
+use core::{alloc::Layout, fmt, marker::PhantomData, mem, ptr};
 
 #[cfg(feature = "macro")]
 #[cfg_attr(docsrs, doc(cfg(feature = "macro")))]
@@ -351,7 +351,7 @@ impl<T> Resource<T> {
     pub fn upcast_ref(&self) -> &Resource<()> {
         debug_assert_eq!(Layout::new::<Self>(), Layout::new::<Resource<()>>());
 
-        let ptr = (self as *const Self).cast::<Resource<()>>();
+        let ptr = ptr::from_ref(self).cast::<Resource<()>>();
         unsafe {
             // SAFETY: All resource types have identical alignment (thanks to `repr(C)`),
             // hence, casting among them is safe.
