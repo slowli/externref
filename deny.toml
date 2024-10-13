@@ -25,7 +25,7 @@ skip-tree = [
   # Relied upon by `tracing` (via `regex`); no fix is possible ATM
   { name = "regex-automata", version = "^0.1" },
   # Relied upon by multiple crates; since it largely provides OS bindings, duplication is sort of fine
-  { name = "windows-sys", version = "^0.48" },
+  { name = "windows-sys", version = "^0.52" },
   # Relied upon by `walrus`
   { name = "indexmap", version = "^1" },
 ]
