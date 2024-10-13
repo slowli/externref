@@ -1,0 +1,1 @@
+searchState.loadedDescShard("externref_macro", 0, "Procedural macro for <code>externref</code>.\nPrepares imported functions or an exported function with …")
