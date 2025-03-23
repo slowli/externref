@@ -21,8 +21,7 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 use syn::{
-    parse::{Error as SynError, Parser},
-    Item, Path,
+    parse::{Error as SynError, Parser}, parse2, Item, Path
 };
 
 mod externref;
@@ -43,8 +42,19 @@ impl ExternrefAttrs {
 
         let parser = syn::meta::parser(|meta| {
             if meta.path.is_ident("crate") {
-                let path_str: syn::LitStr = meta.value()?.parse()?;
-                attrs.crate_path = Some(path_str.parse()?);
+                let value = meta.value()?;
+                let value: proc_macro2::TokenStream = value.parse()?;
+                // let value = meta.input;
+                match parse2(value.clone()) {
+                    Err(_) => {
+                        let path_str: syn::LitStr = parse2(value)?;
+                        attrs.crate_path = Some(path_str.parse()?);
+                    }
+                    Ok(mut path) => {
+                        // path = value.parse()?;
+                        attrs.crate_path = Some(path)
+                    },
+                }
                 Ok(())
             } else {
                 Err(meta.error("unsupported attribute"))
