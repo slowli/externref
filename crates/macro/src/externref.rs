@@ -48,7 +48,7 @@ enum SimpleResourceKind {
 
 impl SimpleResourceKind {
     fn is_resource(ty: &TypePath) -> bool {
-        ty.path.segments.last().map_or(false, |segment| {
+        ty.path.segments.last().is_some_and(|segment| {
             segment.ident == "Resource"
                 && matches!(
                     &segment.arguments,
