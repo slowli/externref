@@ -94,6 +94,7 @@ impl Data {
         let dropped_strings = self.dropped.iter().filter_map(|drop| {
             drop.data(store)
                 .expect("reference was unexpectedly garbage-collected")
+                .unwrap()
                 .downcast_ref::<Box<str>>()
                 .map(AsRef::as_ref)
         });
@@ -122,6 +123,7 @@ fn send_message(
     let sender = resource
         .context("null reference passed to host")?
         .data(&ctx)?
+        .context("null reference")?
         .downcast_ref::<HostSender>()
         .ok_or_else(|| anyhow!("passed reference has incorrect type"))?;
     assert!(ctx.data().senders.contains(&sender.key));
@@ -137,6 +139,7 @@ fn message_len(ctx: Caller<'_, Data>, resource: Option<Rooted<ExternRef>>) -> an
     let str = resource
         .data(&ctx)
         .context("passed reference is garbage-collected")?
+        .context("null reference")?
         .downcast_ref::<Box<str>>()
         .context("passed reference has incorrect type")?;
     Ok(u32::try_from(str.len()).unwrap())
@@ -150,19 +153,19 @@ fn inspect_refs(mut ctx: Caller<'_, Data>) {
 
 fn assert_refs(mut ctx: Caller<'_, Data>, table: &Table, buffers_liveness: &[bool]) {
     let size = table.size(&ctx);
-    assert_eq!(size, 1 + buffers_liveness.len() as u32);
+    assert_eq!(size, 1 + buffers_liveness.len() as u64);
     let refs: Vec<_> = (0..size)
         .map(|idx| table.get(&mut ctx, idx).unwrap())
         .collect();
     let refs: Vec<_> = refs.iter().map(Ref::unwrap_extern).collect();
 
     let sender_ref = refs[0].as_ref().unwrap();
-    assert!(sender_ref.data(&ctx).unwrap().is::<HostSender>());
+    assert!(sender_ref.data(&ctx).unwrap().unwrap().is::<HostSender>());
 
     for (buffer_ref, &live) in refs[1..].iter().zip(buffers_liveness) {
         if live {
             let buffer_ref = buffer_ref.as_ref().unwrap();
-            assert!(buffer_ref.data(&ctx).unwrap().is::<Box<str>>());
+            assert!(buffer_ref.data(&ctx).unwrap().unwrap().is::<Box<str>>());
         } else {
             assert!(buffer_ref.is_none());
         }
