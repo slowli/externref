@@ -115,3 +115,8 @@ pub extern "C" fn test_nulls(sender: Option<&Resource<Sender>>) {
     }
     assert_eq!(unsafe { imports::message_len(None) }, 0);
 }
+
+#[externref(crate = crate::reexports::anyref)]
+pub extern "C" fn test_nulls2(sender: Option<&Resource<Sender>>) {
+    test_nulls(sender);
+}
