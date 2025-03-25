@@ -21,7 +21,8 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 use syn::{
-    parse::{Error as SynError, Parser}, parse2, Item, Path
+    parse::{Error as SynError, Parser},
+    parse2, Item, Path,
 };
 
 mod externref;
@@ -53,7 +54,7 @@ impl ExternrefAttrs {
                     Ok(mut path) => {
                         // path = value.parse()?;
                         attrs.crate_path = Some(path)
-                    },
+                    }
                 }
                 Ok(())
             } else {
