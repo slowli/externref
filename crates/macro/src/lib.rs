@@ -44,18 +44,11 @@ impl ExternrefAttrs {
         let parser = syn::meta::parser(|meta| {
             if meta.path.is_ident("crate") {
                 let value = meta.value()?;
-                let value: proc_macro2::TokenStream = value.parse()?;
-                // let value = meta.input;
-                match parse2(value.clone()) {
-                    Err(_) => {
-                        let path_str: syn::LitStr = parse2(value)?;
-                        attrs.crate_path = Some(path_str.parse()?);
-                    }
-                    Ok(mut path) => {
-                        // path = value.parse()?;
-                        attrs.crate_path = Some(path)
-                    }
-                }
+                attrs.crate_path = Some(if let Ok(path_str) = value.parse::<syn::LitStr>() {
+                    path_str.parse()?
+                } else {
+                    value.parse()?
+                });
                 Ok(())
             } else {
                 Err(meta.error("unsupported attribute"))
