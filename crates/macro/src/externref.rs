@@ -340,7 +340,7 @@ impl Function {
         } else {
             self.arg_count + 1
         };
-        let bytes = (args_and_return_type_count + 7) / 8;
+        let bytes = args_and_return_type_count.div_ceil(8);
 
         let maybe_ret_idx = if matches!(self.return_type, ReturnType::Resource(_)) {
             Some(self.arg_count)
