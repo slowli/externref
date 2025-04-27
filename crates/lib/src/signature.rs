@@ -83,7 +83,7 @@ impl<'a> BitSlice<'a> {
 
     fn read_from_section(buffer: &mut &'a [u8], context: &str) -> Result<Self, ReadError> {
         let bit_len = read_u32(buffer, || format!("length for {context}"))? as usize;
-        let byte_len = (bit_len + 7) / 8;
+        let byte_len = bit_len.div_ceil(8);
         if buffer.len() < byte_len {
             Err(ReadErrorKind::UnexpectedEof.with_context(context))
         } else {
