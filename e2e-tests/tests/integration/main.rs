@@ -309,7 +309,7 @@ fn assert_tracing_output(storage: &Storage) {
     );
     assert_eq!(
         transformed_exports.len(),
-        1 + contains_export as usize + contains_export_with_casts as usize,
+        2 + contains_export as usize + contains_export_with_casts as usize,
         "{transformed_exports:?}"
     );
 }
