@@ -116,7 +116,9 @@ pub extern "C" fn test_nulls(sender: Option<&Resource<Sender>>) {
     assert_eq!(unsafe { imports::message_len(None) }, 0);
 }
 
+// Add another param to the function so that it's not deduped with `test_nulls`
+// (incl. by `wasm-opt` over which we don't have any control).
 #[externref(crate = crate::reexports::anyref)]
-pub extern "C" fn test_nulls2(sender: Option<&Resource<Sender>>) {
+pub extern "C" fn test_nulls2(sender: Option<&Resource<Sender>>, _unused: u32) {
     test_nulls(sender);
 }
