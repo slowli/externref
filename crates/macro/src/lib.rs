@@ -43,8 +43,12 @@ impl ExternrefAttrs {
 
         let parser = syn::meta::parser(|meta| {
             if meta.path.is_ident("crate") {
-                let path_str: syn::LitStr = meta.value()?.parse()?;
-                attrs.crate_path = Some(path_str.parse()?);
+                let value = meta.value()?;
+                attrs.crate_path = Some(if let Ok(path_str) = value.parse::<syn::LitStr>() {
+                    path_str.parse()?
+                } else {
+                    value.parse()?
+                });
                 Ok(())
             } else {
                 Err(meta.error("unsupported attribute"))

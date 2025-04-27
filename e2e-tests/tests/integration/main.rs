@@ -248,7 +248,7 @@ fn assert_tracing_output(storage: &Storage) {
     let spans = storage.scan_spans();
     let process_span = spans.single(&name(eq("process")));
     let matches =
-        level(Level::INFO) & message(eq("parsed custom section")) & field("functions.len", 5_u64);
+        level(Level::INFO) & message(eq("parsed custom section")) & field("functions.len", 6_u64);
     process_span.scan_events().single(&matches);
 
     let patch_imports_span = spans.single(&name(eq("patch_imports")));
