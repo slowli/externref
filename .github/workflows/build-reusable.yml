@@ -10,7 +10,7 @@ on:
         default: stable
 
 env:
-  binaryen: version_110
+  binaryen: version_124
 
 jobs:
   build:
