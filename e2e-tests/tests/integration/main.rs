@@ -13,7 +13,7 @@ use tracing_subscriber::{
     fmt::format::FmtSpan, layer::SubscriberExt, registry::LookupSpan, FmtSubscriber,
 };
 use wasmtime::{
-    Caller, Engine, Extern, ExternRef, Linker, ManuallyRooted, Module, Ref, Rooted, Store, Table,
+    Caller, Engine, Extern, ExternRef, Linker, Module, OwnedRooted, Ref, Rooted, Store, Table,
 };
 
 use crate::compile::CompilationProfile;
@@ -70,7 +70,7 @@ struct Data {
     externrefs: Option<Table>,
     ref_assertions: Vec<RefAssertion>,
     senders: HashSet<String>,
-    dropped: Vec<ManuallyRooted<ExternRef>>,
+    dropped: Vec<OwnedRooted<ExternRef>>,
 }
 
 impl Data {
@@ -174,7 +174,7 @@ fn assert_refs(mut ctx: Caller<'_, Data>, table: &Table, buffers_liveness: &[boo
 
 fn drop_ref(mut ctx: Caller<'_, Data>, dropped: Option<Rooted<ExternRef>>) {
     let dropped = dropped.expect("drop fn called with null ref");
-    let dropped = dropped.to_manually_rooted(&mut ctx).unwrap();
+    let dropped = dropped.to_owned_rooted(&mut ctx).unwrap();
     ctx.data_mut().dropped.push(dropped);
 }
 
@@ -230,7 +230,7 @@ fn transform_module(profile: CompilationProfile, test_export: &str) {
         .data()
         .assert_drops(&store, &["test", "some other string", "42"]);
 
-    store.gc();
+    store.gc(None);
     let size = externrefs.size(&store);
     assert_eq!(size, 4); // sender + 3 buffers
     for i in 0..size {
