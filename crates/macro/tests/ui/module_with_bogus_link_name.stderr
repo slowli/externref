@@ -4,8 +4,13 @@ error: expected `=`
 6 |     #[link_name("huh")]
   |                ^
 
-error: malformed `link_name` attribute input
+error[E0539]: malformed `link_name` attribute input
   --> tests/ui/module_with_bogus_link_name.rs:13:5
    |
 13 |     #[link_name = 3]
-   |     ^^^^^^^^^^^^^^^^ help: must be of the form: `#[link_name = "name"]`
+   |     ^^^^^^^^^^^^^^-^
+   |     |             |
+   |     |             expected a string literal here
+   |     help: must be of the form: `#[link_name = "name"]`
+   |
+   = note: for more information, visit <https://doc.rust-lang.org/reference/items/external-blocks.html#the-link_name-attribute>
