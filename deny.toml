@@ -6,10 +6,7 @@ feature-depth = 1
 [advisories]
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "deny"
-ignore = [
-  "RUSTSEC-2017-0008", # `serial` crate is unmaintained; depended on from test deps only
-  "RUSTSEC-2024-0436", # paste - no longer maintained; depended on from test deps only
-]
+ignore = []
 
 [licenses]
 allow = [
@@ -27,13 +24,10 @@ multiple-versions = "deny"
 wildcards = "deny"
 allow-wildcard-paths = true
 skip-tree = [
-  # Relied upon by `tracing` (via `regex`); no fix is possible ATM
-  { name = "regex-automata", version = "^0.1" },
-  # Relied upon by multiple crates; since it largely provides OS bindings, duplication is sort of fine
-  { name = "windows-sys", version = "^0.52" },
   # Relied upon by `walrus`
   { name = "indexmap", version = "^1" },
-  { name = "hashbrown", version = "^0.14" },
+  # Relied upon by `wasmtime` crates
+  { name = "hashbrown", version = "^0.15" },
 ]
 
 [sources]
