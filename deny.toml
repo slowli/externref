@@ -28,6 +28,8 @@ skip-tree = [
   { name = "indexmap", version = "^1" },
   # Relied upon by `wasmtime` crates
   { name = "hashbrown", version = "^0.15" },
+  # Relied upon by `clap`
+  { name = "windows-sys", version = "^0.60" },
 ]
 
 [sources]
