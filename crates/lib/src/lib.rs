@@ -411,6 +411,7 @@ impl<T> PartialEq for Resource<T> {
 
 impl<T> Eq for Resource<T> {}
 
+/// Hashes the resource based on its pointer, consistently with the [`PartialEq`] / [`Eq`] implementation.
 impl<T> Hash for Resource<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.id.hash(state);
