@@ -89,7 +89,7 @@
 //! of the WASM linear memory used by `rustc` / LLVM when the main WASM stack is insufficient).
 //! This makes replacing these surrogates with `externref`s much harder (essentially, it'd require symbolic execution
 //! of the affected function to find out which locals should be replaced with `externref`s). This behavior should be detected
-//! by the [processor](processor), leading to "incorrectly placed externref guard" errors. Currently,
+//! by the [processor], leading to "incorrectly placed externref guard" errors. Currently,
 //! the only workaround is to [set debug info level](https://doc.rust-lang.org/cargo/reference/profiles.html#debug)
 //! to `limited` or below for the compiled WASM module.
 //!
