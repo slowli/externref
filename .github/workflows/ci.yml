@@ -9,6 +9,7 @@ on:
 env:
   msrv: 1.82.0
   nightly: nightly-2025-11-02
+  binaryen: version_124
 
 jobs:
   build-msrv:
@@ -33,12 +34,96 @@ jobs:
         run: cargo build -p externref -p externref-macro --all-features
 
   build:
-    uses: ./.github/workflows/build-reusable.yml
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+      - name: Install wasm-opt
+        run: |
+          wget -q -O binaryen.tar.gz https://github.com/WebAssembly/binaryen/releases/download/$binaryen/binaryen-$binaryen-x86_64-linux.tar.gz && \
+          tar xf binaryen.tar.gz && \
+          sudo install "binaryen-$binaryen/bin/wasm-opt" /usr/local/bin
+      - name: Install cargo-deny
+        uses: baptiste0928/cargo-install@v2
+        with:
+          crate: cargo-deny
+          version: "^0.18.5"
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo
+
+      - name: Format
+        run: cargo fmt --all -- --check --config imports_granularity=Crate --config group_imports=StdExternalCrate
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-features --all-targets -- -D warnings
+      - name: Clippy (no features)
+        run: cargo clippy -p externref --no-default-features --lib -- -D warnings
+      - name: Clippy (processor)
+        run: cargo clippy -p externref --no-default-features --features=processor --lib -- -D warnings
+
+      - name: Check dependencies
+        run: cargo deny --all-features check
+
+      # Build the E2E crate first to speed up its testing.
+      - name: Build E2E test crate
+        run: cargo build -p externref-test --lib --target wasm32-unknown-unknown --profile wasm
+
+      - name: Run tests
+        run: cargo test --workspace --all-features --all-targets
+      - name: Run doc tests
+        run: cargo test --workspace --all-features --doc
+
+  build-nightly:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.nightly }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-nightly-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-nightly-cargo
+
+      - name: Build docs
+        run: |
+          cargo clean --doc \
+            && cargo rustdoc -p externref --all-features -- -D warnings --cfg docsrs \
+            && cargo rustdoc -p externref-macro -- -D warnings --cfg docsrs
+
+      - name: Deploy
+        uses: JamesIves/github-pages-deploy-action@v4
+        if: github.event_name == 'push'
+        with:
+          branch: gh-pages
+          folder: target/doc
+          single-commit: true
 
   build-docker:
     needs:
       - build
       - build-msrv
+      - build-nightly
     permissions:
       contents: read
       packages: write
@@ -127,39 +212,3 @@ jobs:
         run: docker push "$IMAGE_TAG"
         env:
           IMAGE_TAG: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
-
-  document:
-    if: github.event_name == 'push'
-    needs:
-      - build
-      - build-msrv
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ env.nightly }}
-
-      - name: Cache cargo build
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-document-cargo-${{ hashFiles('Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-document-cargo
-
-      - name: Build docs
-        run: |
-          cargo clean --doc && cargo rustdoc -p externref --all-features -- --cfg docsrs \
-            && cargo rustdoc -p externref-macro -- --cfg docsrs
-
-      - name: Deploy
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          branch: gh-pages
-          folder: target/doc
-          single-commit: true
