@@ -173,7 +173,13 @@
     clippy::inline_always
 )]
 
-use core::{alloc::Layout, fmt, marker::PhantomData, mem, ptr};
+use core::{
+    alloc::Layout,
+    fmt,
+    hash::{Hash, Hasher},
+    marker::PhantomData,
+    mem, ptr,
+};
 
 #[cfg(feature = "macro")]
 #[cfg_attr(docsrs, doc(cfg(feature = "macro")))]
@@ -393,6 +399,21 @@ impl<T> Drop for Resource<T> {
         }
 
         unsafe { drop_externref(self.id) };
+    }
+}
+
+/// Compares resources by their pointers, similar to [`ptr::eq()`].
+impl<T> PartialEq for Resource<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl<T> Eq for Resource<T> {}
+
+impl<T> Hash for Resource<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
     }
 }
 

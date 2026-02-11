@@ -299,7 +299,7 @@ impl Function {
         for (i, arg) in sig.inputs.iter_mut().enumerate() {
             if let FnArg::Typed(typed_arg) = arg {
                 let arg = Ident::new(&format!("__arg{i}"), typed_arg.pat.span());
-                *typed_arg.pat =syn::parse_quote!(#arg);
+                *typed_arg.pat = syn::parse_quote!(#arg);
 
                 if let Some(kind) = self.resource_args.get(&i) {
                     args.push(kind.prepare_for_import(&arg, cr));
