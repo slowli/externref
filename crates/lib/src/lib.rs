@@ -187,10 +187,12 @@ pub use externref_macro::externref;
 
 pub use crate::{
     error::{ReadError, ReadErrorKind},
+    guard::{DropGuard, Forget, Register},
     signature::{BitSlice, BitSliceBuilder, Function, FunctionKind},
 };
 
 mod error;
+mod guard;
 mod imports;
 #[cfg(feature = "processor")]
 #[cfg_attr(docsrs, doc(cfg(feature = "processor")))]
@@ -237,55 +239,6 @@ impl ExternRef {
     }
 }
 
-/// Trait for various drop behaviors for [`Resource`]s.
-pub trait DropGuard: sealed::Sealed {
-    #[doc(hidden)] // implementation detail
-    fn new(id: usize) -> Self;
-    #[doc(hidden)] // implementation detail
-    fn as_id(&self) -> usize;
-}
-
-/// FIXME
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
-pub struct Forget(usize);
-
-impl sealed::Sealed for Forget {}
-
-impl DropGuard for Forget {
-    fn new(id: usize) -> Self {
-        Self(id)
-    }
-
-    fn as_id(&self) -> usize {
-        self.0
-    }
-}
-
-/// FIXME
-#[derive(Debug)]
-#[repr(C)]
-pub struct Register(usize);
-
-impl sealed::Sealed for Register {}
-
-impl DropGuard for Register {
-    fn new(id: usize) -> Self {
-        Self(id)
-    }
-
-    fn as_id(&self) -> usize {
-        self.0
-    }
-}
-
-impl Drop for Register {
-    #[inline(always)]
-    fn drop(&mut self) {
-        unsafe { imports::drop_externref(self.0) };
-    }
-}
-
 /// Host resource exposed to WASM.
 ///
 /// Internally, a resource is just an index into the `externref`s table; thus, it is completely
@@ -303,10 +256,15 @@ impl Drop for Register {
 ///
 /// # Cloning
 ///
-/// Since resources may have [configurable logic executed on drop](processor::Processor::set_drop_fn())
-/// (e.g., to have RAII-style resource management on the host side),
-/// `Resource` intentionally doesn't implement `Clone` or `Copy`. To clone such a resource,
+/// By default, resources may have [configurable logic executed on drop](processor::Processor::set_drop_fn())
+/// (e.g., to have RAII-style resource management on the host side). Dropping the resource also cleans up the resource slot
+/// in the `externref` table.
+/// Thus, `Resource` intentionally doesn't implement [`Clone`] or [`Copy`]. To clone such a resource,
 /// you may use [`Rc`](std::rc::Rc), [`Arc`](std::sync::Arc) or another smart pointer.
+///
+/// As an alternative, you may use [`ResourceCopy`]. This is a version of `Resource` that does not
+/// execute *any* logic on drop (not even cleaning up the `externref` table entry!). As a consequence,
+/// `ResourceCopy` may be copied across the app.
 ///
 /// # Examples
 ///
@@ -400,7 +358,6 @@ impl Drop for Register {
 ///     }
 /// }
 /// ```
-// TODO: implement copyable resources (opt-out of drop fn)
 #[derive(Debug)]
 #[repr(C)]
 pub struct Resource<T, D = Register> {
@@ -408,16 +365,23 @@ pub struct Resource<T, D = Register> {
     _ty: PhantomData<fn(T)>,
 }
 
-/// FIXME
-pub type CopyResource<T> = Resource<T, Forget>;
+/// [`Resource`] variation that can be copied.
+///
+/// # Cleanup
+///
+/// `ResourceCopy` **does not** clean up the `externref` table entry on drop. It can only be cleaned up
+/// by the host side, or by implementing custom `Drop` logic for a higher-level `Resource` wrapper.
+/// In the extreme case, when the WASM module is short-lived, garbage collection of dead `externref`s may
+/// be summarily ignored.
+pub type ResourceCopy<T> = Resource<T, Forget>;
 
-impl<T> Clone for CopyResource<T> {
+impl<T> Clone for ResourceCopy<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T> Copy for CopyResource<T> {}
+impl<T> Copy for ResourceCopy<T> {}
 
 #[doc(hidden)] // should only be used by macro-generated code
 impl<T, D: DropGuard> Resource<T, D> {
@@ -435,7 +399,7 @@ impl<T, D: DropGuard> Resource<T, D> {
             None
         } else {
             Some(Self {
-                drop_guard: D::new(id),
+                drop_guard: D::from_id(id),
                 _ty: PhantomData,
             })
         }
@@ -449,17 +413,18 @@ impl<T, D: DropGuard> Resource<T, D> {
             "Passed null `externref` as non-nullable arg"
         );
         Self {
-            drop_guard: D::new(id),
+            drop_guard: D::from_id(id),
             _ty: PhantomData,
         }
     }
 }
 
 impl<T> Resource<T> {
-    /// FIXME
-    pub fn leak(self) -> CopyResource<T> {
-        let this = CopyResource {
-            drop_guard: Forget(self.drop_guard.as_id()),
+    /// Leaks this resource. Similarly to [`Box::leak()`] or [`mem::forget()`], this isn't unsafe,
+    /// but may lead to resource starvation.
+    pub fn leak(self) -> ResourceCopy<T> {
+        let this = ResourceCopy {
+            drop_guard: Forget::from_id(self.drop_guard.as_id()),
             _ty: PhantomData,
         };
         mem::forget(self.drop_guard);
@@ -509,10 +474,11 @@ impl<T, D: DropGuard> Resource<T, D> {
     }
 
     /// Upcasts a reference to this resource to a generic resource reference.
-    pub fn upcast_ref(&self) -> &Resource<()> {
-        debug_assert_eq!(Layout::new::<Self>(), Layout::new::<Resource<()>>());
+    #[allow(clippy::missing_panics_doc)] // sanity check; should never be triggered.
+    pub fn upcast_ref(&self) -> &Resource<(), D> {
+        assert_eq!(Layout::new::<Self>(), Layout::new::<Resource<(), D>>());
 
-        let ptr = ptr::from_ref(self).cast::<Resource<()>>();
+        let ptr = ptr::from_ref(self).cast::<Resource<(), D>>();
         unsafe {
             // SAFETY: All resource types have identical alignment (thanks to `repr(C)`),
             // hence, casting among them is safe.
@@ -521,7 +487,7 @@ impl<T, D: DropGuard> Resource<T, D> {
     }
 }
 
-impl Resource<()> {
+impl<D: DropGuard> Resource<(), D> {
     /// Downcasts this generic resource to a specific type.
     ///
     /// # Safety
@@ -529,7 +495,7 @@ impl Resource<()> {
     /// No checks are performed that the resource actually encapsulates what is meant
     /// by `Resource<T>`. It is up to the caller to check this beforehand (e.g., by calling
     /// a WASM import taking `&Resource<()>` and returning an app-specific resource kind).
-    pub unsafe fn downcast_unchecked<T>(self) -> Resource<T> {
+    pub unsafe fn downcast_unchecked<T>(self) -> Resource<T, D> {
         Resource {
             drop_guard: self.drop_guard,
             _ty: PhantomData,

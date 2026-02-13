@@ -29,7 +29,7 @@ mod reexports {
 }
 
 mod imports {
-    use externref::{CopyResource, Resource};
+    use externref::{Resource, ResourceCopy};
 
     use crate::{Bytes, Sender};
 
@@ -47,7 +47,7 @@ mod imports {
             sender: &Resource<Sender>,
             message_ptr: *const u8,
             message_len: usize,
-        ) -> CopyResource<Bytes>;
+        ) -> ResourceCopy<Bytes>;
 
         pub(crate) fn message_len(bytes: Option<&Resource<Bytes>>) -> usize;
 
@@ -69,7 +69,7 @@ mod imports {
         _: &Resource<Sender>,
         _: *const u8,
         _: usize,
-    ) -> CopyResource<Bytes> {
+    ) -> ResourceCopy<Bytes> {
         panic!("only callable from WASM")
     }
 
