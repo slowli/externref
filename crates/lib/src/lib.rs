@@ -268,6 +268,116 @@ unsafe fn insert_externref(id: ExternRef) -> usize {
 /// Internally, a resource is just an index into the `externref`s table; thus, it is completely
 /// valid to store `Resource`s on heap (in a `Vec`, thread-local storage, etc.). The type param
 /// can be used for type safety.
+///
+/// # Equality
+///
+/// `Resource` implements [`PartialEq`], [`Eq`] and [`Hash`] traits from the standard library,
+/// in which it has pointer semantics (i.e., two `Resource`s are equal if they point to the same data,
+/// which, since `Resource` [cannot be cloned](#cloning), means they are the same object). If you want to compare
+/// the pointed-to content, it can be accomplished by wrapping a `Resource` into a higher-level abstraction
+/// and implementing `PartialEq` / `Eq` / `Hash` / other traits e.g. by reading data from the host
+/// or delegating comparison to the host.
+///
+/// # Cloning
+///
+/// Since resources may have [configurable logic executed on drop](processor::Processor::set_drop_fn())
+/// (e.g., to have RAII-style resource management on the host side),
+/// `Resource` intentionally doesn't implement `Clone` or `Copy`. To clone such a resource,
+/// you may use [`Rc`](std::rc::Rc), [`Arc`](std::sync::Arc) or another smart pointer.
+///
+/// # Examples
+///
+/// ## Cloning
+///
+/// In this scenario, the `Resource` is cloneable by wrapping it in an `Arc`. This retains RAII
+/// resource management capabilities.
+///
+/// ```no_run
+/// use externref::{externref, Resource};
+/// use std::sync::Arc;
+///
+/// #[externref]
+/// #[link(wasm_import_module = "data")]
+/// extern "C" {
+///     fn alloc_data(capacity: usize) -> Resource<SmartData>;
+///
+///     fn data_len(handle: &Resource<SmartData>) -> usize;
+/// }
+///
+/// #[derive(Debug, Clone)]
+/// pub struct SmartData {
+///     // `Resource<Self>` is completely valid (doesn't lead to type size errors),
+///     // and in fact is encouraged.
+///     handle: Arc<Resource<Self>>,
+/// }
+///
+/// impl SmartData {
+///     fn new(capacity: usize) -> Self {
+///         Self {
+///             handle: Arc::new(unsafe { alloc_data(capacity) }),
+///         }
+///     }
+///
+///     fn len(&self) -> usize {
+///         unsafe { data_len(&self.handle) }
+///     }
+/// }
+/// ```
+///
+/// ## Implementing comparisons
+///
+/// This implements `Eq`, `Ord` and `Hash` traits for the *pointee* based on host imports.
+///
+/// ```no_run
+/// use externref::{externref, Resource};
+/// use core::{cmp, hash::{Hash, Hasher}};
+///
+/// #[externref]
+/// #[link(wasm_import_module = "data")]
+/// extern "C" {
+///     /// Compares pointed-to data and returns -1 / 0 / 1.
+///     fn compare(
+///         lhs: &Resource<ComparableData>,
+///         rhs: &Resource<ComparableData>,
+///     ) -> isize;
+///
+///     /// Hashes the pointed-to data.
+///     fn hash(data: &Resource<ComparableData>) -> u64;
+/// }
+///
+/// #[derive(Debug)]
+/// pub struct ComparableData {
+///     handle: Resource<Self>,
+/// }
+///
+/// impl PartialEq for ComparableData {
+///     fn eq(&self, other: &Self) -> bool {
+///         unsafe { compare(&self.handle, &other.handle) == 0 }
+///     }
+/// }
+///
+/// impl Eq for ComparableData {}
+///
+/// impl PartialOrd for ComparableData {
+///     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+///         Some(self.cmp(other))
+///     }
+/// }
+///
+/// impl Ord for ComparableData {
+///     fn cmp(&self, other: &Self) -> cmp::Ordering {
+///         let ordering = unsafe { compare(&self.handle, &other.handle) };
+///         ordering.cmp(&0)
+///     }
+/// }
+///
+/// impl Hash for ComparableData {
+///     fn hash<H: Hasher>(&self, hasher: &mut H) {
+///         unsafe { hash(&self.handle) }.hash(hasher)
+///     }
+/// }
+/// ```
+// TODO: implement copyable resources (opt-out of drop fn)
 #[derive(Debug)]
 #[repr(C)]
 pub struct Resource<T> {
