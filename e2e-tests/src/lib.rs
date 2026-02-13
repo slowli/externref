@@ -7,6 +7,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use externref::{externref, Resource};
+use hashbrown::HashSet;
 
 #[cfg(target_arch = "wasm32")]
 #[global_allocator]
@@ -80,9 +81,22 @@ pub extern "C" fn test_export(sender: Resource<Sender>) {
             unsafe { imports::send_message(&sender, message.as_ptr(), message.len()) }
         });
     let mut messages: Vec<_> = messages.collect();
+
+    // Check `PartialEq` for messages.
+    for (i, lhs) in messages.iter().enumerate() {
+        for (j, rhs) in messages.iter().enumerate() {
+            assert_eq!(lhs == rhs, i == j);
+        }
+    }
+
     inspect_refs();
     messages.swap_remove(0);
     inspect_refs();
+
+    let messages: HashSet<_> = messages.into_iter().collect();
+    inspect_refs();
+    assert_eq!(messages.len(), 2);
+
     drop(messages);
     inspect_refs();
 }
@@ -100,8 +114,14 @@ pub extern "C" fn test_export_with_casts(sender: Resource<()>) {
         });
     let mut messages: Vec<_> = messages.collect();
     inspect_refs();
+
     messages.swap_remove(0);
     inspect_refs();
+
+    let messages: HashSet<_> = messages.into_iter().collect();
+    inspect_refs();
+    assert_eq!(messages.len(), 2);
+
     drop(messages);
     inspect_refs();
 }
