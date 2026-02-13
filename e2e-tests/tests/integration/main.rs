@@ -90,7 +90,7 @@ impl Data {
         HostSender { key: name }
     }
 
-    fn assert_drops(&self, store: &Store<Data>, expected_strings: &[&str]) {
+    fn assert_drops(&self, store: &Store<Data>, expected_strings: &HashSet<&str>) {
         let dropped_strings = self.dropped.iter().filter_map(|drop| {
             drop.data(store)
                 .expect("reference was unexpectedly garbage-collected")
@@ -98,7 +98,7 @@ impl Data {
                 .downcast_ref::<Box<str>>()
                 .map(AsRef::as_ref)
         });
-        let dropped_strings: Vec<&str> = dropped_strings.collect();
+        let dropped_strings: HashSet<&str> = dropped_strings.collect();
         assert_eq!(dropped_strings, *expected_strings);
     }
 }
@@ -212,6 +212,7 @@ fn transform_module(profile: CompilationProfile, test_export: &str) {
         |caller, table| assert_refs(caller, table, &[true; 2]),
         |caller, table| assert_refs(caller, table, &[true; 3]),
         |caller, table| assert_refs(caller, table, &[false, true, true]),
+        |caller, table| assert_refs(caller, table, &[false, true, true]),
         |caller, table| assert_refs(caller, table, &[false; 3]),
     ];
     let mut store = Store::new(module.engine(), Data::new(ref_assertions));
@@ -228,7 +229,7 @@ fn transform_module(profile: CompilationProfile, test_export: &str) {
 
     store
         .data()
-        .assert_drops(&store, &["test", "some other string", "42"]);
+        .assert_drops(&store, &["test", "some other string", "42"].into());
 
     store.gc(None);
     let size = externrefs.size(&store);

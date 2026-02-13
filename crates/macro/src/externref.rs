@@ -252,10 +252,10 @@ impl Function {
         for (i, arg) in export_sig.inputs.iter_mut().enumerate() {
             if let FnArg::Typed(typed_arg) = arg {
                 let arg = Ident::new(&format!("__arg{i}"), typed_arg.pat.span());
-                typed_arg.pat = Box::new(syn::parse_quote!(#arg));
+                *typed_arg.pat = syn::parse_quote!(#arg);
 
                 if let Some(kind) = self.resource_args.get(&i) {
-                    typed_arg.ty = Box::new(syn::parse_quote!(#cr::ExternRef));
+                    *typed_arg.ty = syn::parse_quote!(#cr::ExternRef);
                     args.push(kind.initialize_for_export(&arg, cr));
                 } else {
                     args.push(quote!(#arg));
@@ -299,7 +299,7 @@ impl Function {
         for (i, arg) in sig.inputs.iter_mut().enumerate() {
             if let FnArg::Typed(typed_arg) = arg {
                 let arg = Ident::new(&format!("__arg{i}"), typed_arg.pat.span());
-                typed_arg.pat = Box::new(syn::parse_quote!(#arg));
+                *typed_arg.pat = syn::parse_quote!(#arg);
 
                 if let Some(kind) = self.resource_args.get(&i) {
                     args.push(kind.prepare_for_import(&arg, cr));
@@ -473,7 +473,7 @@ impl Imports {
                 for (i, arg) in fn_item.sig.inputs.iter_mut().enumerate() {
                     if function.resource_args.contains_key(&i) {
                         if let FnArg::Typed(typed_arg) = arg {
-                            typed_arg.ty = Box::new(syn::parse_quote!(#cr::ExternRef));
+                            *typed_arg.ty = syn::parse_quote!(#cr::ExternRef);
                         }
                     }
                 }
