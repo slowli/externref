@@ -205,6 +205,10 @@ mod alloc {
     pub(crate) use std::{format, string::String};
 }
 
+mod sealed {
+    pub trait Sealed {}
+}
+
 /// `externref` surrogate.
 ///
 /// The post-processing logic replaces variables of this type with real `externref`s.
@@ -230,6 +234,55 @@ impl ExternRef {
         unsafe {
             imports::externref_guard();
         }
+    }
+}
+
+/// Trait for various drop behaviors for [`Resource`]s.
+pub trait DropGuard: sealed::Sealed {
+    #[doc(hidden)] // implementation detail
+    fn new(id: usize) -> Self;
+    #[doc(hidden)] // implementation detail
+    fn as_id(&self) -> usize;
+}
+
+/// FIXME
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct Forget(usize);
+
+impl sealed::Sealed for Forget {}
+
+impl DropGuard for Forget {
+    fn new(id: usize) -> Self {
+        Self(id)
+    }
+
+    fn as_id(&self) -> usize {
+        self.0
+    }
+}
+
+/// FIXME
+#[derive(Debug)]
+#[repr(C)]
+pub struct Register(usize);
+
+impl sealed::Sealed for Register {}
+
+impl DropGuard for Register {
+    fn new(id: usize) -> Self {
+        Self(id)
+    }
+
+    fn as_id(&self) -> usize {
+        self.0
+    }
+}
+
+impl Drop for Register {
+    #[inline(always)]
+    fn drop(&mut self) {
+        unsafe { imports::drop_externref(self.0) };
     }
 }
 
@@ -350,12 +403,24 @@ impl ExternRef {
 // TODO: implement copyable resources (opt-out of drop fn)
 #[derive(Debug)]
 #[repr(C)]
-pub struct Resource<T> {
-    id: usize,
+pub struct Resource<T, D = Register> {
+    drop_guard: D,
     _ty: PhantomData<fn(T)>,
 }
 
-impl<T> Resource<T> {
+/// FIXME
+pub type CopyResource<T> = Resource<T, Forget>;
+
+impl<T> Clone for CopyResource<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for CopyResource<T> {}
+
+#[doc(hidden)] // should only be used by macro-generated code
+impl<T, D: DropGuard> Resource<T, D> {
     /// Creates a new resource converting it from.
     ///
     /// # Safety
@@ -363,7 +428,6 @@ impl<T> Resource<T> {
     /// This method must be called with an `externref` obtained from the host (as a return
     /// type for an imported function or an argument for an exported function); it is not
     /// a "real" `usize`. The proper use is ensured by the [`externref`] macro.
-    #[doc(hidden)] // should only be used by macro-generated code
     #[inline(always)]
     pub unsafe fn new(id: ExternRef) -> Option<Self> {
         let id = unsafe { imports::insert_externref(id) };
@@ -371,13 +435,12 @@ impl<T> Resource<T> {
             None
         } else {
             Some(Self {
-                id,
+                drop_guard: D::new(id),
                 _ty: PhantomData,
             })
         }
     }
 
-    #[doc(hidden)] // should only be used by macro-generated code
     #[inline(always)]
     pub unsafe fn new_non_null(id: ExternRef) -> Self {
         let id = unsafe { imports::insert_externref(id) };
@@ -386,11 +449,26 @@ impl<T> Resource<T> {
             "Passed null `externref` as non-nullable arg"
         );
         Self {
-            id,
+            drop_guard: D::new(id),
             _ty: PhantomData,
         }
     }
+}
 
+impl<T> Resource<T> {
+    /// FIXME
+    pub fn leak(self) -> CopyResource<T> {
+        let this = CopyResource {
+            drop_guard: Forget(self.drop_guard.as_id()),
+            _ty: PhantomData,
+        };
+        mem::forget(self.drop_guard);
+        this
+    }
+}
+
+#[doc(hidden)] // should only be used by macro-generated code
+impl<T, D: DropGuard> Resource<T, D> {
     /// Obtains an `externref` from this resource.
     ///
     /// # Safety
@@ -398,43 +476,36 @@ impl<T> Resource<T> {
     /// The returned value of this method must be passed as an `externref` to the host
     /// (as a return type of an exported function or an argument of the imported function);
     /// it is not a "real" `usize`. The proper use is ensured by the [`externref`] macro.
-    #[doc(hidden)] // should only be used by macro-generated code
     #[inline(always)]
     pub unsafe fn raw(this: Option<&Self>) -> ExternRef {
         unsafe {
             imports::get_externref(match this {
                 None => usize::MAX,
-                Some(resource) => resource.id,
+                Some(resource) => resource.drop_guard.as_id(),
             })
         }
     }
 
     /// Obtains an `externref` from this resource and drops the resource.
-    #[doc(hidden)] // should only be used by macro-generated code
     #[inline(always)]
     #[allow(clippy::needless_pass_by_value)]
     pub unsafe fn take_raw(this: Option<Self>) -> ExternRef {
         unsafe {
             imports::get_externref(match &this {
                 None => usize::MAX,
-                Some(resource) => resource.id,
+                Some(resource) => resource.drop_guard.as_id(),
             })
         }
     }
+}
 
+impl<T, D: DropGuard> Resource<T, D> {
     /// Upcasts this resource to a generic resource.
-    pub fn upcast(self) -> Resource<()> {
+    pub fn upcast(self) -> Resource<(), D> {
         Resource {
-            id: self.leak_id(),
+            drop_guard: self.drop_guard,
             _ty: PhantomData,
         }
-    }
-
-    #[inline]
-    fn leak_id(self) -> usize {
-        let id = self.id;
-        mem::forget(self);
-        id
     }
 
     /// Upcasts a reference to this resource to a generic resource reference.
@@ -460,33 +531,25 @@ impl Resource<()> {
     /// a WASM import taking `&Resource<()>` and returning an app-specific resource kind).
     pub unsafe fn downcast_unchecked<T>(self) -> Resource<T> {
         Resource {
-            id: self.leak_id(),
+            drop_guard: self.drop_guard,
             _ty: PhantomData,
         }
     }
 }
 
-/// Drops the `externref` associated with this resource.
-impl<T> Drop for Resource<T> {
-    #[inline(always)]
-    fn drop(&mut self) {
-        unsafe { imports::drop_externref(self.id) };
-    }
-}
-
 /// Compares resources by their pointers, similar to [`ptr::eq()`].
-impl<T> PartialEq for Resource<T> {
+impl<T, D: DropGuard> PartialEq for Resource<T, D> {
     fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
+        self.drop_guard.as_id() == other.drop_guard.as_id()
     }
 }
 
-impl<T> Eq for Resource<T> {}
+impl<T, D: DropGuard> Eq for Resource<T, D> {}
 
 /// Hashes the resource based on its pointer, consistently with the [`PartialEq`] / [`Eq`] implementation.
-impl<T> Hash for Resource<T> {
+impl<T, D: DropGuard> Hash for Resource<T, D> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
+        self.drop_guard.as_id().hash(state);
     }
 }
 

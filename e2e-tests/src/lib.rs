@@ -29,7 +29,7 @@ mod reexports {
 }
 
 mod imports {
-    use externref::Resource;
+    use externref::{CopyResource, Resource};
 
     use crate::{Bytes, Sender};
 
@@ -43,6 +43,12 @@ mod imports {
             message_len: usize,
         ) -> Resource<Bytes>;
 
+        pub(crate) fn send_message_copy(
+            sender: &Resource<Sender>,
+            message_ptr: *const u8,
+            message_len: usize,
+        ) -> CopyResource<Bytes>;
+
         pub(crate) fn message_len(bytes: Option<&Resource<Bytes>>) -> usize;
 
         #[link_name = "inspect_refs"]
@@ -55,6 +61,15 @@ mod imports {
         _: *const u8,
         _: usize,
     ) -> Resource<Bytes> {
+        panic!("only callable from WASM")
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) unsafe fn send_message_copy(
+        _: &Resource<Sender>,
+        _: *const u8,
+        _: usize,
+    ) -> CopyResource<Bytes> {
         panic!("only callable from WASM")
     }
 
@@ -97,6 +112,22 @@ pub extern "C" fn test_export(sender: Resource<Sender>) {
     inspect_refs();
     assert_eq!(messages.len(), 2);
 
+    drop(messages);
+    inspect_refs();
+}
+
+#[externref]
+pub extern "C" fn test_export_with_copies(sender: Resource<Sender>) {
+    let str = "test";
+    let message = unsafe { imports::send_message_copy(&sender, str.as_ptr(), str.len()) };
+    inspect_refs();
+    let other_message = unsafe { imports::send_message(&sender, str.as_ptr(), str.len()) };
+    inspect_refs();
+    let other_message = other_message.leak();
+    inspect_refs();
+
+    let messages: HashSet<_> = [message, other_message, message, message, other_message].into();
+    assert_eq!(messages.len(), 2);
     drop(messages);
     inspect_refs();
 }
