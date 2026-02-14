@@ -365,23 +365,21 @@ impl Function {
         }
     }
 }
-/// Check if an attribute is #[no_mangle] or #[unsafe(no_mangle)]
-fn has_no_mangle(attr: &Attribute) -> bool {
-    if attr.path().is_ident("no_mangle") {
+/// Check for is #[ident] or #[unsafe(ident)]
+fn find_ident(attr: &Attribute, ident: &str) -> bool {
+    if attr.path().is_ident(ident) {
         return true;
     }
     if let Meta::List(list) = &attr.meta {
         if list.path.is_ident("unsafe") {
-            if let Ok(parsed) =
-                list.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
+            if let Ok(metas) = list.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
             {
-                return parsed
+                return metas
                     .iter()
-                    .find(|nested| {
-                        if let Meta::Path(p) = nested {
-                            return p.is_ident("no_mangle");
-                        }
-                        return false;
+                    .find(|meta| match meta {
+                        Meta::Path(path) => path.is_ident(ident),
+                        Meta::List(_) => false,
+                        Meta::NameValue(meta_name_value) => meta_name_value.path.is_ident(ident),
                     })
                     .is_some();
             }
@@ -398,7 +396,7 @@ pub(crate) fn for_export(function: &mut ItemFn, attrs: &ExternrefAttrs) -> Token
         // "Un-export" the function by removing the relevant attributes.
         function.sig.abi = None;
         let attr_idx = function.attrs.iter().enumerate().find_map(|(idx, attr)| {
-            if attr.path().is_ident("export_name") {
+            if find_ident(attr, "export_name") {
                 Some(idx)
             } else {
                 None
@@ -408,7 +406,9 @@ pub(crate) fn for_export(function: &mut ItemFn, attrs: &ExternrefAttrs) -> Token
 
         // Remove `#[no_mangle]` attr if present as well; if it is retained, it will still
         // generate an export.
-        function.attrs.retain(|attr| return !has_no_mangle(attr));
+        function
+            .attrs
+            .retain(|attr| return !find_ident(attr, "no_mangle"));
 
         let export = parsed_function.wrap_export(function, export_name_attr);
         (Some(parsed_function.declare(None)), Some(export))
