@@ -366,7 +366,7 @@ impl Function {
     }
 }
 /// Check if an attribute is #[no_mangle] or #[unsafe(no_mangle)]
-fn has_mangle(attr: &Attribute) -> bool {
+fn has_no_mangle(attr: &Attribute) -> bool {
     if attr.path().is_ident("no_mangle") {
         return true;
     }
@@ -408,7 +408,7 @@ pub(crate) fn for_export(function: &mut ItemFn, attrs: &ExternrefAttrs) -> Token
 
         // Remove `#[no_mangle]` attr if present as well; if it is retained, it will still
         // generate an export.
-        function.attrs.retain(|attr| return !has_mangle(attr));
+        function.attrs.retain(|attr| return !has_no_mangle(attr));
 
         let export = parsed_function.wrap_export(function, export_name_attr);
         (Some(parsed_function.declare(None)), Some(export))
