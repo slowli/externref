@@ -365,7 +365,30 @@ impl Function {
         }
     }
 }
-
+/// Check if an attribute is #[no_mangle] or #[unsafe(no_mangle)]
+fn has_mangle(attr: &Attribute) -> bool {
+    if attr.path().is_ident("no_mangle") {
+        return true;
+    }
+    if let Meta::List(list) = &attr.meta {
+        if list.path.is_ident("unsafe") {
+            if let Ok(parsed) =
+                list.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
+            {
+                return parsed
+                    .iter()
+                    .find(|nested| {
+                        if let Meta::Path(p) = nested {
+                            return p.is_ident("no_mangle");
+                        }
+                        return false;
+                    })
+                    .is_some();
+            }
+        }
+    }
+    false
+}
 pub(crate) fn for_export(function: &mut ItemFn, attrs: &ExternrefAttrs) -> TokenStream {
     let parsed_function = match Function::new(function, attrs) {
         Ok(function) => function,
@@ -385,9 +408,7 @@ pub(crate) fn for_export(function: &mut ItemFn, attrs: &ExternrefAttrs) -> Token
 
         // Remove `#[no_mangle]` attr if present as well; if it is retained, it will still
         // generate an export.
-        function
-            .attrs
-            .retain(|attr| !attr.path().is_ident("no_mangle"));
+        function.attrs.retain(|attr| return !has_mangle(attr));
 
         let export = parsed_function.wrap_export(function, export_name_attr);
         (Some(parsed_function.declare(None)), Some(export))
