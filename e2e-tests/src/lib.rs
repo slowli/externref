@@ -143,3 +143,14 @@ pub extern "C" fn test_nulls(sender: Option<&Resource<Sender>>) {
 pub extern "C" fn test_nulls2(sender: Option<&Resource<Sender>>, _unused: u32) {
     test_nulls(sender);
 }
+
+/// Tests returning a resource from an export.
+#[externref]
+pub extern "C" fn test_returning_resource(sender: Option<Resource<Sender>>) -> Resource<Sender> {
+    let sender = sender.expect("null");
+    let message = "Hello, world!";
+    unsafe {
+        imports::send_message(&sender, message.as_ptr(), message.len());
+    }
+    sender
+}

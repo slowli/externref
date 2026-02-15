@@ -447,7 +447,7 @@ impl<T> Resource<T> {
     #[allow(clippy::needless_pass_by_value)]
     pub unsafe fn take_raw(this: Option<Self>) -> ExternRef {
         unsafe {
-            get_externref(match this { // FIXME
+            get_externref(match &this {
                 None => usize::MAX,
                 Some(resource) => resource.id,
             })
