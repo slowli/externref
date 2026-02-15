@@ -191,6 +191,7 @@ pub use crate::{
 };
 
 mod error;
+mod imports;
 #[cfg(feature = "processor")]
 #[cfg_attr(docsrs, doc(cfg(feature = "processor")))]
 pub mod processor;
@@ -226,43 +227,10 @@ impl ExternRef {
     /// This guard should only be inserted by the `externref` macro.
     #[inline(always)]
     pub unsafe fn guard() {
-        #[cfg(target_arch = "wasm32")]
-        #[link(wasm_import_module = "externref")]
-        unsafe extern "C" {
-            #[link_name = "guard"]
-            fn guard();
-        }
-
-        #[cfg(target_arch = "wasm32")]
         unsafe {
-            guard();
+            imports::externref_guard();
         }
     }
-}
-
-#[cfg(target_arch = "wasm32")]
-#[link(wasm_import_module = "externref")]
-unsafe extern "C" {
-    #[link_name = "get"]
-    fn get_externref(id: usize) -> ExternRef;
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-unsafe fn get_externref(id: usize) -> ExternRef {
-    ExternRef(id)
-}
-
-#[cfg(target_arch = "wasm32")]
-#[link(wasm_import_module = "externref")]
-unsafe extern "C" {
-    #[link_name = "insert"]
-    fn insert_externref(id: ExternRef) -> usize;
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-#[allow(clippy::needless_pass_by_value)]
-unsafe fn insert_externref(id: ExternRef) -> usize {
-    id.0
 }
 
 /// Host resource exposed to WASM.
@@ -398,7 +366,7 @@ impl<T> Resource<T> {
     #[doc(hidden)] // should only be used by macro-generated code
     #[inline(always)]
     pub unsafe fn new(id: ExternRef) -> Option<Self> {
-        let id = unsafe { insert_externref(id) };
+        let id = unsafe { imports::insert_externref(id) };
         if id == usize::MAX {
             None
         } else {
@@ -412,7 +380,7 @@ impl<T> Resource<T> {
     #[doc(hidden)] // should only be used by macro-generated code
     #[inline(always)]
     pub unsafe fn new_non_null(id: ExternRef) -> Self {
-        let id = unsafe { insert_externref(id) };
+        let id = unsafe { imports::insert_externref(id) };
         assert!(
             id != usize::MAX,
             "Passed null `externref` as non-nullable arg"
@@ -434,7 +402,7 @@ impl<T> Resource<T> {
     #[inline(always)]
     pub unsafe fn raw(this: Option<&Self>) -> ExternRef {
         unsafe {
-            get_externref(match this {
+            imports::get_externref(match this {
                 None => usize::MAX,
                 Some(resource) => resource.id,
             })
@@ -447,7 +415,7 @@ impl<T> Resource<T> {
     #[allow(clippy::needless_pass_by_value)]
     pub unsafe fn take_raw(this: Option<Self>) -> ExternRef {
         unsafe {
-            get_externref(match &this {
+            imports::get_externref(match &this {
                 None => usize::MAX,
                 Some(resource) => resource.id,
             })
@@ -502,19 +470,7 @@ impl Resource<()> {
 impl<T> Drop for Resource<T> {
     #[inline(always)]
     fn drop(&mut self) {
-        #[cfg(target_arch = "wasm32")]
-        #[link(wasm_import_module = "externref")]
-        unsafe extern "C" {
-            #[link_name = "drop"]
-            fn drop_externref(id: usize);
-        }
-
-        #[cfg(not(target_arch = "wasm32"))]
-        unsafe fn drop_externref(_id: usize) {
-            // Do nothing
-        }
-
-        unsafe { drop_externref(self.id) };
+        unsafe { imports::drop_externref(self.id) };
     }
 }
 
