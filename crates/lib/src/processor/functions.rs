@@ -6,13 +6,13 @@ use std::{
 };
 
 use walrus::{
-    ir::{self, BinaryOp},
     Function, FunctionBuilder, FunctionId, FunctionKind as WasmFunctionKind, ImportKind,
     InstrLocId, InstrSeqBuilder, LocalFunction, LocalId, Module, ModuleImports, RefType, TableId,
     ValType,
+    ir::{self, BinaryOp},
 };
 
-use super::{Error, Processor, EXTERNREF};
+use super::{EXTERNREF, Error, Processor};
 
 #[derive(Debug)]
 pub(crate) struct ExternrefImports {

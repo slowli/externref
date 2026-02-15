@@ -2,15 +2,15 @@
 
 use std::{collections::HashSet, sync::Once};
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use assert_matches::assert_matches;
 use externref::processor::Processor;
 use once_cell::sync::Lazy;
-use test_casing::{test_casing, Product};
-use tracing::{subscriber::DefaultGuard, Level, Subscriber};
+use test_casing::{Product, test_casing};
+use tracing::{Level, Subscriber, subscriber::DefaultGuard};
 use tracing_capture::{CaptureLayer, SharedStorage, Storage};
 use tracing_subscriber::{
-    fmt::format::FmtSpan, layer::SubscriberExt, registry::LookupSpan, FmtSubscriber,
+    FmtSubscriber, fmt::format::FmtSpan, layer::SubscriberExt, registry::LookupSpan,
 };
 use wasmtime::{
     Caller, Engine, Extern, ExternRef, Linker, Module, OwnedRooted, Ref, Rooted, Store, Table,
@@ -244,7 +244,7 @@ fn assert_tracing_output(storage: &Storage) {
         ord::{eq, gt},
         str::contains,
     };
-    use tracing_capture::predicates::{field, into_fn, level, message, name, value, ScanExt};
+    use tracing_capture::predicates::{ScanExt, field, into_fn, level, message, name, value};
 
     let spans = storage.scan_spans();
     let process_span = spans.single(&name(eq("process")));

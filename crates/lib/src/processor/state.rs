@@ -6,13 +6,13 @@ use std::{
 };
 
 use walrus::{
-    ir, ExportItem, FunctionBuilder, FunctionId, ImportKind, LocalFunction, LocalId, Module,
-    ModuleLocals, ModuleTypes, TypeId, ValType,
+    ExportItem, FunctionBuilder, FunctionId, ImportKind, LocalFunction, LocalId, Module,
+    ModuleLocals, ModuleTypes, TypeId, ValType, ir,
 };
 
 use super::{
-    functions::{get_offset, ExternrefImports, PatchedFunctions},
-    Error, Location, Processor, EXTERNREF,
+    EXTERNREF, Error, Location, Processor,
+    functions::{ExternrefImports, PatchedFunctions, get_offset},
 };
 use crate::{Function, FunctionKind};
 
@@ -127,7 +127,7 @@ impl ProcessingState {
                         return Err(Error::UnexpectedImportType {
                             module: module_name.to_owned(),
                             name: function.name.to_owned(),
-                        })
+                        });
                     }
                 }
             }

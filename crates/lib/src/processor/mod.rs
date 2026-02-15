@@ -46,7 +46,7 @@
 //! # Ok::<_, externref::processor::Error>(())
 //! ```
 
-use walrus::{passes::gc, Module, RefType, ValType};
+use walrus::{Module, RefType, ValType, passes::gc};
 
 pub use self::error::{Error, Location};
 use self::state::ProcessingState;

@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 env:
-  msrv: 1.82.0
+  msrv: 1.85.0
   nightly: nightly-2025-11-02
   binaryen: version_124
 

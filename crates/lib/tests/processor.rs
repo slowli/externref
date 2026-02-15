@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use externref::{processor::Processor, BitSlice, Function, FunctionKind};
+use externref::{BitSlice, Function, FunctionKind, processor::Processor};
 use walrus::{ExportItem, ImportKind, Module, RawCustomSection, RefType, ValType};
 
 const EXTERNREF: ValType = ValType::Ref(RefType::Externref);
@@ -113,10 +113,12 @@ fn basic_module_with_no_table_export_and_drop_hook() {
     assert_eq!(function_type.results(), []);
 
     // Check that the refs table is not exported.
-    assert!(!module
-        .exports
-        .iter()
-        .any(|export| matches!(export.item, ExportItem::Table(_))));
+    assert!(
+        !module
+            .exports
+            .iter()
+            .any(|export| matches!(export.item, ExportItem::Table(_)))
+    );
 
     // Check that the module is well-formed by converting it to bytes and back.
     let module_bytes = module.emit_wasm();

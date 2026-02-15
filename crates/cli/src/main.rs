@@ -12,7 +12,7 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::{anyhow, ensure, Context};
+use anyhow::{Context, anyhow, ensure};
 use clap::Parser;
 use externref::processor::Processor;
 
@@ -68,7 +68,7 @@ struct Cli {
 impl Cli {
     #[cfg(feature = "tracing")]
     fn configure_tracing() {
-        use tracing_subscriber::{filter::EnvFilter, FmtSubscriber};
+        use tracing_subscriber::{FmtSubscriber, filter::EnvFilter};
 
         FmtSubscriber::builder()
             .without_time()

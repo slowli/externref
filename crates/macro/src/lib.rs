@@ -21,8 +21,8 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 use syn::{
-    parse::{Error as SynError, Parser},
     Item, Path,
+    parse::{Error as SynError, Parser},
 };
 
 mod externref;
@@ -95,7 +95,7 @@ pub fn externref(attr: TokenStream, input: TokenStream) -> TokenStream {
         Ok(other) => {
             return SynError::new_spanned(other, MSG)
                 .into_compile_error()
-                .into()
+                .into();
         }
         Err(err) => return err.into_compile_error().into(),
     };

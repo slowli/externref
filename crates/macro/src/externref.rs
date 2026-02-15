@@ -1,11 +1,11 @@
 use std::{collections::HashMap, mem};
 
 use proc_macro2::TokenStream;
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 use syn::{
-    parse::Error as SynError, punctuated::Punctuated, spanned::Spanned, Attribute, Expr, ExprLit,
-    FnArg, ForeignItem, GenericArgument, Ident, ItemFn, ItemForeignMod, Lit, LitStr, Meta, PatType,
-    Path, PathArguments, Signature, Token, Type, TypePath, Visibility,
+    Attribute, Expr, ExprLit, FnArg, ForeignItem, GenericArgument, Ident, ItemFn, ItemForeignMod,
+    Lit, LitStr, Meta, PatType, Path, PathArguments, Signature, Token, Type, TypePath, Visibility,
+    parse::Error as SynError, punctuated::Punctuated, spanned::Spanned,
 };
 
 use crate::ExternrefAttrs;
@@ -241,7 +241,7 @@ impl Function {
         let cr = &self.crate_path;
         let export_name = export_name.unwrap_or_else(|| {
             let name = raw.sig.ident.to_string();
-            syn::parse_quote!(#[export_name = #name])
+            syn::parse_quote!(#[unsafe(export_name = #name)])
         });
         let mut export_sig = raw.sig.clone();
         export_sig.abi = Some(syn::parse_quote!(extern "C"));
@@ -366,6 +366,24 @@ impl Function {
     }
 }
 
+/// Checks whether the attribute has either `#[name ..]` or `#[unsafe(name ..)`] form.
+fn is_unsafe_attr(attr: &Attribute, name: &str) -> bool {
+    if attr.path().is_ident(name) {
+        return true;
+    }
+
+    let syn::Meta::List(meta) = &attr.meta else {
+        return false;
+    };
+    if !meta.path.is_ident("unsafe") {
+        return false;
+    }
+    let Ok(nested_meta) = meta.parse_args::<syn::Meta>() else {
+        return false;
+    };
+    nested_meta.path().is_ident(name)
+}
+
 pub(crate) fn for_export(function: &mut ItemFn, attrs: &ExternrefAttrs) -> TokenStream {
     let parsed_function = match Function::new(function, attrs) {
         Ok(function) => function,
@@ -375,7 +393,7 @@ pub(crate) fn for_export(function: &mut ItemFn, attrs: &ExternrefAttrs) -> Token
         // "Un-export" the function by removing the relevant attributes.
         function.sig.abi = None;
         let attr_idx = function.attrs.iter().enumerate().find_map(|(idx, attr)| {
-            if attr.path().is_ident("export_name") {
+            if is_unsafe_attr(attr, "export_name") {
                 Some(idx)
             } else {
                 None
@@ -387,7 +405,7 @@ pub(crate) fn for_export(function: &mut ItemFn, attrs: &ExternrefAttrs) -> Token
         // generate an export.
         function
             .attrs
-            .retain(|attr| !attr.path().is_ident("no_mangle"));
+            .retain(|attr| !is_unsafe_attr(attr, "no_mangle"));
 
         let export = parsed_function.wrap_export(function, export_name_attr);
         (Some(parsed_function.declare(None)), Some(export))
@@ -579,7 +597,7 @@ mod tests {
         let wrapper: syn::Item = syn::parse_quote!(#wrapper);
         let expected: syn::Item = syn::parse_quote! {
             const _: () = {
-                #[export_name = "test_export"]
+                #[unsafe(export_name = "test_export")]
                 unsafe extern "C" fn __externref_export(
                     __arg0: externref::ExternRef,
                     __arg1: externref::ExternRef,
