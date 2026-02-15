@@ -129,7 +129,7 @@
 //!
 //! #[externref]
 //! #[link(wasm_import_module = "test")]
-//! extern "C" {
+//! unsafe extern "C" {
 //!     // This import will have signature `(externref, i32, i32) -> externref`
 //!     // on host.
 //!     fn send_message(
@@ -147,7 +147,7 @@
 //!
 //! // This export will have signature `(externref)` on host.
 //! #[externref]
-//! #[export_name = "test_export"]
+//! #[unsafe(export_name = "test_export")]
 //! pub extern "C" fn test_export(sender: Resource<Sender>) {
 //!     let messages: Vec<_> = ["test", "42", "some other string"]
 //!         .into_iter()
@@ -191,6 +191,7 @@ pub use crate::{
 };
 
 mod error;
+mod imports;
 #[cfg(feature = "processor")]
 #[cfg_attr(docsrs, doc(cfg(feature = "processor")))]
 pub mod processor;
@@ -226,41 +227,10 @@ impl ExternRef {
     /// This guard should only be inserted by the `externref` macro.
     #[inline(always)]
     pub unsafe fn guard() {
-        #[cfg(target_arch = "wasm32")]
-        #[link(wasm_import_module = "externref")]
-        extern "C" {
-            #[link_name = "guard"]
-            fn guard();
+        unsafe {
+            imports::externref_guard();
         }
-
-        #[cfg(target_arch = "wasm32")]
-        guard();
     }
-}
-
-#[cfg(target_arch = "wasm32")]
-#[link(wasm_import_module = "externref")]
-extern "C" {
-    #[link_name = "get"]
-    fn get_externref(id: usize) -> ExternRef;
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-unsafe fn get_externref(id: usize) -> ExternRef {
-    ExternRef(id)
-}
-
-#[cfg(target_arch = "wasm32")]
-#[link(wasm_import_module = "externref")]
-extern "C" {
-    #[link_name = "insert"]
-    fn insert_externref(id: ExternRef) -> usize;
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-#[allow(clippy::needless_pass_by_value)]
-unsafe fn insert_externref(id: ExternRef) -> usize {
-    id.0
 }
 
 /// Host resource exposed to WASM.
@@ -298,7 +268,7 @@ unsafe fn insert_externref(id: ExternRef) -> usize {
 ///
 /// #[externref]
 /// #[link(wasm_import_module = "data")]
-/// extern "C" {
+/// unsafe extern "C" {
 ///     fn alloc_data(capacity: usize) -> Resource<SmartData>;
 ///
 ///     fn data_len(handle: &Resource<SmartData>) -> usize;
@@ -334,7 +304,7 @@ unsafe fn insert_externref(id: ExternRef) -> usize {
 ///
 /// #[externref]
 /// #[link(wasm_import_module = "data")]
-/// extern "C" {
+/// unsafe extern "C" {
 ///     /// Compares pointed-to data and returns -1 / 0 / 1.
 ///     fn compare(
 ///         lhs: &Resource<ComparableData>,
@@ -396,7 +366,7 @@ impl<T> Resource<T> {
     #[doc(hidden)] // should only be used by macro-generated code
     #[inline(always)]
     pub unsafe fn new(id: ExternRef) -> Option<Self> {
-        let id = insert_externref(id);
+        let id = unsafe { imports::insert_externref(id) };
         if id == usize::MAX {
             None
         } else {
@@ -410,7 +380,7 @@ impl<T> Resource<T> {
     #[doc(hidden)] // should only be used by macro-generated code
     #[inline(always)]
     pub unsafe fn new_non_null(id: ExternRef) -> Self {
-        let id = insert_externref(id);
+        let id = unsafe { imports::insert_externref(id) };
         assert!(
             id != usize::MAX,
             "Passed null `externref` as non-nullable arg"
@@ -431,10 +401,12 @@ impl<T> Resource<T> {
     #[doc(hidden)] // should only be used by macro-generated code
     #[inline(always)]
     pub unsafe fn raw(this: Option<&Self>) -> ExternRef {
-        get_externref(match this {
-            None => usize::MAX,
-            Some(resource) => resource.id,
-        })
+        unsafe {
+            imports::get_externref(match this {
+                None => usize::MAX,
+                Some(resource) => resource.id,
+            })
+        }
     }
 
     /// Obtains an `externref` from this resource and drops the resource.
@@ -442,10 +414,12 @@ impl<T> Resource<T> {
     #[inline(always)]
     #[allow(clippy::needless_pass_by_value)]
     pub unsafe fn take_raw(this: Option<Self>) -> ExternRef {
-        get_externref(match this.as_ref() {
-            None => usize::MAX,
-            Some(resource) => resource.id,
-        })
+        unsafe {
+            imports::get_externref(match &this {
+                None => usize::MAX,
+                Some(resource) => resource.id,
+            })
+        }
     }
 
     /// Upcasts this resource to a generic resource.
@@ -496,19 +470,7 @@ impl Resource<()> {
 impl<T> Drop for Resource<T> {
     #[inline(always)]
     fn drop(&mut self) {
-        #[cfg(target_arch = "wasm32")]
-        #[link(wasm_import_module = "externref")]
-        extern "C" {
-            #[link_name = "drop"]
-            fn drop_externref(id: usize);
-        }
-
-        #[cfg(not(target_arch = "wasm32"))]
-        unsafe fn drop_externref(_id: usize) {
-            // Do nothing
-        }
-
-        unsafe { drop_externref(self.id) };
+        unsafe { imports::drop_externref(self.id) };
     }
 }
 

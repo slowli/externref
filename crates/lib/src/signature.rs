@@ -3,7 +3,7 @@
 use core::str;
 
 use crate::{
-    alloc::{format, String},
+    alloc::{String, format},
     error::{ReadError, ReadErrorKind},
 };
 
@@ -264,7 +264,7 @@ macro_rules! declare_function {
         const _: () = {
             const FUNCTION: $crate::Function = $signature;
 
-            #[cfg_attr(target_arch = "wasm32", link_section = "__externrefs")]
+            #[cfg_attr(target_arch = "wasm32", unsafe(link_section = "__externrefs"))]
             static DATA_SECTION: [u8; FUNCTION.custom_section_len()] = FUNCTION.custom_section();
         };
     };

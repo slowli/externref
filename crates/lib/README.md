@@ -98,7 +98,7 @@ unsafe fn alloc(_: &Resource<Arena>, _: usize)
 
 // This export will have signature `(externref) -> ()` on host.
 #[externref]
-#[export_name = "test_export"]
+#[unsafe(export_name = "test_export")]
 pub extern "C" fn test_export(arena: &Resource<Arena>) {
     let bytes = unsafe { alloc(arena, 42) }.expect("cannot allocate");
     // Do something with `bytes`...

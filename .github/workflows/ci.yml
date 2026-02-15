@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 env:
-  msrv: 1.82.0
+  msrv: 1.85.0
   nightly: nightly-2025-11-02
   binaryen: version_124
 
@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
@@ -24,7 +24,7 @@ jobs:
           toolchain: ${{ env.msrv }}
 
       - name: Cache cargo build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: target
           key: ${{ runner.os }}-msrv-cargo-${{ hashFiles('Cargo.lock') }}
@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
@@ -51,13 +51,13 @@ jobs:
           tar xf binaryen.tar.gz && \
           sudo install "binaryen-$binaryen/bin/wasm-opt" /usr/local/bin
       - name: Install cargo-deny
-        uses: baptiste0928/cargo-install@v2
+        uses: baptiste0928/cargo-install@v3
         with:
           crate: cargo-deny
           version: "^0.18.5"
 
       - name: Cache cargo build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: target
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
@@ -91,7 +91,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
@@ -99,7 +99,7 @@ jobs:
           toolchain: ${{ env.nightly }}
 
       - name: Cache cargo build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: target
           key: ${{ runner.os }}-nightly-cargo-${{ hashFiles('Cargo.lock') }}
@@ -130,10 +130,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Cache Docker build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: target/docker
           key: ${{ runner.os }}-docker-buildkit-${{ hashFiles('Cargo.lock') }}

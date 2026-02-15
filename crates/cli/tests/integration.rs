@@ -3,9 +3,9 @@
 #![cfg(unix)] // sh-specific user inputs
 
 use term_transcript::{
+    ExitStatus, PtyCommand, ShellOptions,
     svg::{Template, TemplateOptions},
     test::TestConfig,
-    ExitStatus, PtyCommand, ShellOptions,
 };
 #[cfg(feature = "tracing")]
 use test_casing::{decorate, decorators::Retry};

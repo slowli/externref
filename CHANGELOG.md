@@ -9,6 +9,15 @@ The project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html)
 
 - Implement `PartialEq`, `Eq` and `Hash` traits for `Resource`s based on (externref) pointer comparison.
 
+### Changed
+
+- Bump minimum supported Rust version to 1.85 and switch to 2024 Rust edition.
+
+### Fixed
+
+- Fix `take_raw` dropping the externref before resolving it.
+- Fix compatibility of the generated code with the 2024 Rust edition.
+
 ## 0.3.0-beta.1 - 2024-09-29
 
 ### Added

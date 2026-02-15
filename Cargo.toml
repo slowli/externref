@@ -1,12 +1,15 @@
 [workspace]
 members = ["crates/cli", "crates/lib", "crates/macro", "e2e-tests"]
-resolver = "2"
+resolver = "3"
 
 [workspace.package]
 version = "0.3.0-beta.1"
-edition = "2021"
-rust-version = "1.82"
-authors = ["Alex Ostrovski <ostrovski.alex@gmail.com>"]
+edition = "2024"
+rust-version = "1.85"
+authors = [
+  "Alex Ostrovski <ostrovski.alex@gmail.com>",
+  "Maximilian Münchow",
+]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/slowli/externref"
 

@@ -6,7 +6,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use externref::{externref, Resource};
+use externref::{Resource, externref};
 use hashbrown::HashSet;
 
 #[cfg(target_arch = "wasm32")]
@@ -36,7 +36,7 @@ mod imports {
     #[cfg(target_arch = "wasm32")]
     #[externref::externref]
     #[link(wasm_import_module = "test")]
-    extern "C" {
+    unsafe extern "C" {
         pub(crate) fn send_message(
             sender: &Resource<Sender>,
             message_ptr: *const u8,
@@ -101,7 +101,7 @@ pub extern "C" fn test_export(sender: Resource<Sender>) {
     inspect_refs();
 }
 
-#[export_name = concat!("test_export_", stringify!(with_casts))]
+#[unsafe(export_name = concat!("test_export_", stringify!(with_casts)))]
 // ^ tests manually specified name with a complex expression
 #[externref]
 pub extern "C" fn test_export_with_casts(sender: Resource<()>) {
@@ -127,6 +127,7 @@ pub extern "C" fn test_export_with_casts(sender: Resource<()>) {
 }
 
 #[externref(crate = "crate::reexports::anyref")]
+#[unsafe(no_mangle)]
 pub extern "C" fn test_nulls(sender: Option<&Resource<Sender>>) {
     let message = "test";
     if let Some(sender) = sender {
@@ -141,4 +142,15 @@ pub extern "C" fn test_nulls(sender: Option<&Resource<Sender>>) {
 #[externref(crate = crate::reexports::anyref)]
 pub extern "C" fn test_nulls2(sender: Option<&Resource<Sender>>, _unused: u32) {
     test_nulls(sender);
+}
+
+/// Tests returning a resource from an export.
+#[externref]
+pub extern "C" fn test_returning_resource(sender: Option<Resource<Sender>>) -> Resource<Sender> {
+    let sender = sender.expect("null");
+    let message = "Hello, world!";
+    unsafe {
+        imports::send_message(&sender, message.as_ptr(), message.len());
+    }
+    sender
 }

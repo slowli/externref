@@ -1,14 +1,14 @@
-error: expected `=`
- --> tests/ui/fn_with_bogus_export_name.rs:4:14
+error[E0539]: malformed `export_name` attribute input
+ --> tests/ui/fn_with_bogus_export_name.rs:4:1
   |
-4 | #[export_name("what")]
-  |              ^
+4 | #[unsafe(export_name("what"))]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: must be of the form: `#[export_name = "name"]`
 
 error[E0539]: malformed `export_name` attribute input
   --> tests/ui/fn_with_bogus_export_name.rs:10:1
    |
-10 | #[export_name = 10]
-   | ^^^^^^^^^^^^^^^^--^
-   | |               |
-   | |               expected a string literal here
+10 | #[unsafe(export_name = 10)]
+   | ^^^^^^^^^^^^^^^^^^^^^^^--^^
+   | |                      |
+   | |                      expected a string literal here
    | help: must be of the form: `#[export_name = "name"]`

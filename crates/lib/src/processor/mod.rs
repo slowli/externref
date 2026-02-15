@@ -46,7 +46,7 @@
 //! # Ok::<_, externref::processor::Error>(())
 //! ```
 
-use walrus::{passes::gc, Module, RefType, ValType};
+use walrus::{Module, RefType, ValType, passes::gc};
 
 pub use self::error::{Error, Location};
 use self::state::ProcessingState;
@@ -87,7 +87,8 @@ impl<'a> Processor<'a> {
 
     /// Sets a function to notify the host about dropped `externref`s. This function
     /// will be added as an import with a signature `(externref) -> ()` and will be called
-    /// immediately before dropping each reference.
+    /// immediately before dropping each reference. This includes references the ownership of which
+    /// is transferred to the host by returning the reference from an exported function.
     ///
     /// By default, there is no notifier hook installed.
     pub fn set_drop_fn(&mut self, module: &'a str, name: &'a str) -> &mut Self {

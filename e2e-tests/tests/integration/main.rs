@@ -2,18 +2,19 @@
 
 use std::{collections::HashSet, sync::Once};
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use assert_matches::assert_matches;
 use externref::processor::Processor;
 use once_cell::sync::Lazy;
-use test_casing::{test_casing, Product};
-use tracing::{subscriber::DefaultGuard, Level, Subscriber};
+use test_casing::{Product, test_casing};
+use tracing::{Level, Subscriber, subscriber::DefaultGuard};
 use tracing_capture::{CaptureLayer, SharedStorage, Storage};
 use tracing_subscriber::{
-    fmt::format::FmtSpan, layer::SubscriberExt, registry::LookupSpan, FmtSubscriber,
+    FmtSubscriber, fmt::format::FmtSpan, layer::SubscriberExt, registry::LookupSpan,
 };
 use wasmtime::{
-    Caller, Engine, Extern, ExternRef, Linker, Module, OwnedRooted, Ref, Rooted, Store, Table,
+    AsContextMut, Caller, Engine, Extern, ExternRef, Instance, Linker, Module, OwnedRooted, Ref,
+    Rooted, Store, Table,
 };
 
 use crate::compile::CompilationProfile;
@@ -151,7 +152,12 @@ fn inspect_refs(mut ctx: Caller<'_, Data>) {
     assertions(ctx, &refs);
 }
 
-fn assert_refs(mut ctx: Caller<'_, Data>, table: &Table, buffers_liveness: &[bool]) {
+fn assert_refs(
+    mut ctx: impl AsContextMut,
+    table: &Table,
+    alive_sender: bool,
+    buffers_liveness: &[bool],
+) {
     let size = table.size(&ctx);
     assert_eq!(size, 1 + buffers_liveness.len() as u64);
     let refs: Vec<_> = (0..size)
@@ -159,8 +165,13 @@ fn assert_refs(mut ctx: Caller<'_, Data>, table: &Table, buffers_liveness: &[boo
         .collect();
     let refs: Vec<_> = refs.iter().map(Ref::unwrap_extern).collect();
 
-    let sender_ref = refs[0].as_ref().unwrap();
-    assert!(sender_ref.data(&ctx).unwrap().unwrap().is::<HostSender>());
+    let sender_ref = refs[0].as_ref();
+    if alive_sender {
+        let sender_ref = sender_ref.expect("sender dropped");
+        assert!(sender_ref.data(&ctx).unwrap().unwrap().is::<HostSender>());
+    } else {
+        assert!(sender_ref.is_none());
+    }
 
     for (buffer_ref, &live) in refs[1..].iter().zip(buffers_liveness) {
         if live {
@@ -207,13 +218,13 @@ fn transform_module(profile: CompilationProfile, test_export: &str) {
     assert_tracing_output(&storage.lock());
 
     let ref_assertions: Vec<RefAssertion> = vec![
-        |caller, table| assert_refs(caller, table, &[]),
-        |caller, table| assert_refs(caller, table, &[true]),
-        |caller, table| assert_refs(caller, table, &[true; 2]),
-        |caller, table| assert_refs(caller, table, &[true; 3]),
-        |caller, table| assert_refs(caller, table, &[false, true, true]),
-        |caller, table| assert_refs(caller, table, &[false, true, true]),
-        |caller, table| assert_refs(caller, table, &[false; 3]),
+        |caller, table| assert_refs(caller, table, true, &[]),
+        |caller, table| assert_refs(caller, table, true, &[true]),
+        |caller, table| assert_refs(caller, table, true, &[true; 2]),
+        |caller, table| assert_refs(caller, table, true, &[true; 3]),
+        |caller, table| assert_refs(caller, table, true, &[false, true, true]),
+        |caller, table| assert_refs(caller, table, true, &[false, true, true]),
+        |caller, table| assert_refs(caller, table, true, &[false; 3]),
     ];
     let mut store = Store::new(module.engine(), Data::new(ref_assertions));
     let instance = linker.instantiate(&mut store, &module).unwrap();
@@ -244,12 +255,12 @@ fn assert_tracing_output(storage: &Storage) {
         ord::{eq, gt},
         str::contains,
     };
-    use tracing_capture::predicates::{field, into_fn, level, message, name, value, ScanExt};
+    use tracing_capture::predicates::{ScanExt, field, into_fn, level, message, name, value};
 
     let spans = storage.scan_spans();
     let process_span = spans.single(&name(eq("process")));
     let matches =
-        level(Level::INFO) & message(eq("parsed custom section")) & field("functions.len", 6_u64);
+        level(Level::INFO) & message(eq("parsed custom section")) & field("functions.len", 7_u64);
     process_span.scan_events().single(&matches);
 
     let patch_imports_span = spans.single(&name(eq("patch_imports")));
@@ -310,16 +321,14 @@ fn assert_tracing_output(storage: &Storage) {
     );
     assert_eq!(
         transformed_exports.len(),
-        2 + contains_export as usize + contains_export_with_casts as usize,
+        3 + contains_export as usize + contains_export_with_casts as usize,
         "{transformed_exports:?}"
     );
 }
 
-#[test_casing(4, CompilationProfile::ALL)]
-fn null_references(profile: CompilationProfile) {
-    enable_tracing();
-
+fn init_sender(profile: CompilationProfile) -> (Instance, Store<Data>, Rooted<ExternRef>) {
     let module = Processor::default()
+        .set_drop_fn("test", "drop_ref")
         .process_bytes(module_bytes(profile))
         .unwrap();
     let module = Module::new(&Engine::default(), module).unwrap();
@@ -327,11 +336,53 @@ fn null_references(profile: CompilationProfile) {
     let mut store = Store::new(module.engine(), Data::new(vec![]));
     let instance = linker.instantiate(&mut store, &module).unwrap();
 
+    let sender = store.data_mut().push_sender("sender");
+    let sender = ExternRef::new(&mut store, sender).unwrap();
+    (instance, store, sender)
+}
+
+#[test_casing(4, CompilationProfile::ALL)]
+fn null_references(profile: CompilationProfile) {
+    enable_tracing();
+
+    let (instance, mut store, sender) = init_sender(profile);
     let test_fn = instance
         .get_typed_func::<Option<Rooted<ExternRef>>, ()>(&mut store, "test_nulls")
         .unwrap();
-    let sender = store.data_mut().push_sender("sender");
-    let sender = ExternRef::new(&mut store, sender).unwrap();
     test_fn.call(&mut store, Some(sender)).unwrap();
     test_fn.call(&mut store, None).unwrap();
+}
+
+#[test_casing(4, CompilationProfile::ALL)]
+fn returning_resource_from_guest(profile: CompilationProfile) {
+    let (instance, mut store, sender) = init_sender(profile);
+    let test_fn = instance
+        .get_typed_func::<Option<Rooted<ExternRef>>, Option<Rooted<ExternRef>>>(
+            &mut store,
+            "test_returning_resource",
+        )
+        .unwrap();
+    let returned_sender = test_fn.call(&mut store, Some(sender)).unwrap();
+
+    let returned_sender = returned_sender.expect("returned null");
+    let returned_sender = returned_sender.data(&store).unwrap().expect("no data");
+    let returned_sender = returned_sender.downcast_ref::<HostSender>().unwrap();
+    assert_eq!(returned_sender.key, "sender");
+
+    let externrefs = instance.get_table(&mut store, "externrefs").unwrap();
+    assert_refs(&mut store, &externrefs, false, &[false]);
+
+    let dropped = &store.data().dropped;
+    assert_eq!(dropped.len(), 2);
+    let dropped: Vec<_> = dropped
+        .iter()
+        .map(|drop| {
+            drop.data(&store)
+                .expect("reference was unexpectedly garbage-collected")
+                .unwrap()
+        })
+        .collect();
+    // The buffer should be dropped first, then the sender
+    assert!(dropped[0].is::<Box<str>>());
+    assert!(dropped[1].is::<HostSender>());
 }
