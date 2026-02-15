@@ -129,7 +129,7 @@
 //!
 //! #[externref]
 //! #[link(wasm_import_module = "test")]
-//! extern "C" {
+//! unsafe extern "C" {
 //!     // This import will have signature `(externref, i32, i32) -> externref`
 //!     // on host.
 //!     fn send_message(
@@ -147,7 +147,7 @@
 //!
 //! // This export will have signature `(externref)` on host.
 //! #[externref]
-//! #[export_name = "test_export"]
+//! #[unsafe(export_name = "test_export")]
 //! pub extern "C" fn test_export(sender: Resource<Sender>) {
 //!     let messages: Vec<_> = ["test", "42", "some other string"]
 //!         .into_iter()
@@ -268,7 +268,7 @@ impl ExternRef {
 ///
 /// #[externref]
 /// #[link(wasm_import_module = "data")]
-/// extern "C" {
+/// unsafe extern "C" {
 ///     fn alloc_data(capacity: usize) -> Resource<SmartData>;
 ///
 ///     fn data_len(handle: &Resource<SmartData>) -> usize;
@@ -304,7 +304,7 @@ impl ExternRef {
 ///
 /// #[externref]
 /// #[link(wasm_import_module = "data")]
-/// extern "C" {
+/// unsafe extern "C" {
 ///     /// Compares pointed-to data and returns -1 / 0 / 1.
 ///     fn compare(
 ///         lhs: &Resource<ComparableData>,
