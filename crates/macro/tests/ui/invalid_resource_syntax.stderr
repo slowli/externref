@@ -1,0 +1,11 @@
+error: Unsupported #[resource] attribute; use `#[resource]` or `#[resource = false]`
+ --> tests/ui/invalid_resource_syntax.rs:8:22
+  |
+8 |     fn test_import(#[resource = 5] some_ptr: &Resource<usize>);
+  |                      ^^^^^^^^^^^^
+
+error: expected boolean literal
+  --> tests/ui/invalid_resource_syntax.rs:12:12
+   |
+12 | #[resource(!)]
+   |            ^
