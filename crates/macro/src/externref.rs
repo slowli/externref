@@ -228,13 +228,15 @@ impl Function {
             return Err(syn::Error::new_spanned(variadic, msg));
         }
         let export_name = attr_expr(&function.attrs, "export_name")?;
-        Self::from_sig(&mut function.sig, export_name, attrs)
+        let ret_resource_attr = take_resource_attr(&mut function.attrs)?;
+        Self::from_sig(&mut function.sig, export_name, attrs, ret_resource_attr)
     }
 
     fn from_sig(
         sig: &mut Signature,
         name_override: Option<Expr>,
         attrs: &ExternrefAttrs,
+        ret_resource_attr: Option<bool>,
     ) -> syn::Result<Self> {
         let mut resource_args = HashMap::new();
         for (i, arg) in sig.inputs.iter_mut().enumerate() {
@@ -247,12 +249,16 @@ impl Function {
         }
 
         let return_type = match &sig.output {
-            syn::ReturnType::Type(_, ty) => {
-                // FIXME: support marking return types as well
-                ResourceKind::from_type(ty, None)?
-                    .map_or(ReturnType::NotResource, ReturnType::Resource)
+            syn::ReturnType::Type(_, ty) => ResourceKind::from_type(ty, ret_resource_attr)?
+                .map_or(ReturnType::NotResource, ReturnType::Resource),
+            syn::ReturnType::Default => {
+                if ret_resource_attr.is_some() {
+                    let message =
+                        "#[resource] can only be placed on a function with an explicit return type";
+                    return Err(syn::Error::new_spanned(sig, message));
+                }
+                ReturnType::Default
             }
-            syn::ReturnType::Default => ReturnType::Default,
         };
         let name = name_override.unwrap_or_else(|| {
             let str = sig.ident.to_string();
@@ -527,7 +533,9 @@ impl Imports {
             if let ForeignItem::Fn(fn_item) = item {
                 let link_name = attr_expr(&fn_item.attrs, "link_name")?;
                 let has_link_name = link_name.is_some();
-                let function = Function::from_sig(&mut fn_item.sig, link_name, attrs)?;
+                let ret_resource_attr = take_resource_attr(&mut fn_item.attrs)?;
+                let function =
+                    Function::from_sig(&mut fn_item.sig, link_name, attrs, ret_resource_attr)?;
                 if !function.needs_declaring() {
                     continue;
                 }
@@ -714,7 +722,7 @@ mod tests {
                 message_len: usize,
             ) -> Resource<Bytes>
         };
-        let parsed = Function::from_sig(&mut sig, None, &ExternrefAttrs::default()).unwrap();
+        let parsed = Function::from_sig(&mut sig, None, &ExternrefAttrs::default(), None).unwrap();
 
         let (wrapper, ident) = parsed.wrap_import(&Visibility::Inherited, sig);
         assert_eq!(ident, "__externref_send_message");
