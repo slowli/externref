@@ -353,6 +353,8 @@ fn null_references(profile: CompilationProfile) {
 
 #[test_casing(4, CompilationProfile::ALL)]
 fn returning_resource_from_guest(profile: CompilationProfile) {
+    enable_tracing();
+
     let (instance, mut store, sender) = init_sender(profile);
     let test_fn = instance
         .get_typed_func::<Option<Rooted<ExternRef>>, Option<Rooted<ExternRef>>>(
@@ -383,4 +385,28 @@ fn returning_resource_from_guest(profile: CompilationProfile) {
     // The buffer should be dropped first, then the sender
     assert!(dropped[0].is::<Box<str>>());
     assert!(dropped[1].is::<HostSender>());
+}
+
+#[test_casing(4, CompilationProfile::ALL)]
+fn resource_copies(profile: CompilationProfile) {
+    enable_tracing();
+
+    let (instance, mut store, sender) = init_sender(profile);
+    let test_fn = instance
+        .get_typed_func::<Option<Rooted<ExternRef>>, ()>(&mut store, "test_export_with_copies")
+        .unwrap();
+    test_fn.call(&mut store, Some(sender)).unwrap();
+
+    let externrefs = instance.get_table(&mut store, "externrefs").unwrap();
+    // We allocate 2 copied buffers: one via `-> ResourceCopy` and another by leaking the resource
+    assert_refs(&mut store, &externrefs, false, &[true, true]);
+
+    // The sender is the only resource that should have been dropped
+    let dropped = &store.data().dropped;
+    assert_eq!(dropped.len(), 1);
+    let dropped = dropped[0]
+        .data(&store)
+        .expect("reference was unexpectedly garbage-collected")
+        .unwrap();
+    assert!(dropped.is::<HostSender>());
 }

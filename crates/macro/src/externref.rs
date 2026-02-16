@@ -47,12 +47,13 @@ enum SimpleResourceKind {
 }
 
 impl SimpleResourceKind {
+    // FIXME: support marking resources with an attr?
     fn is_resource(ty: &TypePath) -> bool {
         ty.path.segments.last().is_some_and(|segment| {
-            segment.ident == "Resource"
+            (segment.ident == "Resource" || segment.ident == "ResourceCopy")
                 && matches!(
                     &segment.arguments,
-                    PathArguments::AngleBracketed(args) if args.args.len() == 1
+                    PathArguments::AngleBracketed(args) if (1..=2).contains(&args.args.len())
                 )
         })
     }

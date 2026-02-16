@@ -116,20 +116,22 @@ pub extern "C" fn test_export(sender: Resource<Sender>) {
     inspect_refs();
 }
 
+#[allow(clippy::eq_op)] // intentional
 #[externref]
 pub extern "C" fn test_export_with_copies(sender: Resource<Sender>) {
     let str = "test";
     let message = unsafe { imports::send_message_copy(&sender, str.as_ptr(), str.len()) };
-    inspect_refs();
     let other_message = unsafe { imports::send_message(&sender, str.as_ptr(), str.len()) };
-    inspect_refs();
     let other_message = other_message.leak();
-    inspect_refs();
+    let message_copy = message;
 
-    let messages: HashSet<_> = [message, other_message, message, message, other_message].into();
+    assert!(message == message);
+    assert!(message_copy == message);
+    assert!(message != other_message);
+
+    let messages: HashSet<_> =
+        [message, other_message, message, message_copy, other_message].into();
     assert_eq!(messages.len(), 2);
-    drop(messages);
-    inspect_refs();
 }
 
 #[unsafe(export_name = concat!("test_export_", stringify!(with_casts)))]
