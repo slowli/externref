@@ -34,22 +34,32 @@ mod imports {
     use crate::{Bytes, Sender};
 
     #[cfg(target_arch = "wasm32")]
+    type MessageCopy = ResourceCopy<Bytes>;
+
+    #[cfg(target_arch = "wasm32")]
     #[externref::externref]
     #[link(wasm_import_module = "test")]
     unsafe extern "C" {
+        // Test marking resource args explicitly
+        #[resource]
         pub(crate) fn send_message(
-            sender: &Resource<Sender>,
+            #[resource] sender: &Resource<Sender>,
             message_ptr: *const u8,
             message_len: usize,
         ) -> Resource<Bytes>;
 
+        #[resource]
         pub(crate) fn send_message_copy(
             sender: &Resource<Sender>,
             message_ptr: *const u8,
             message_len: usize,
-        ) -> ResourceCopy<Bytes>;
+        ) -> MessageCopy;
 
         pub(crate) fn message_len(bytes: Option<&Resource<Bytes>>) -> usize;
+
+        /// Inspects the pointer to the `Resource` rather than using the resource itself.
+        /// This is unusual but valid resource usage.
+        pub(crate) fn inspect_message_ref(#[resource = false] bytes: &Resource<Bytes>);
 
         #[link_name = "inspect_refs"]
         pub(crate) fn inspect_refs_on_host();
@@ -77,6 +87,11 @@ mod imports {
     pub(crate) unsafe fn message_len(_: Option<&Resource<Bytes>>) -> usize {
         panic!("only callable from WASM")
     }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) unsafe fn inspect_message_ref(_: &Resource<Bytes>) {
+        panic!("only callable from WASM");
+    }
 }
 
 /// Calls to the host to check the `externrefs` table.
@@ -96,6 +111,12 @@ pub extern "C" fn test_export(sender: Resource<Sender>) {
             unsafe { imports::send_message(&sender, message.as_ptr(), message.len()) }
         });
     let mut messages: Vec<_> = messages.collect();
+
+    for message in &messages {
+        unsafe {
+            imports::inspect_message_ref(message);
+        }
+    }
 
     // Check `PartialEq` for messages.
     for (i, lhs) in messages.iter().enumerate() {
@@ -179,7 +200,10 @@ pub extern "C" fn test_nulls2(sender: Option<&Resource<Sender>>, _unused: u32) {
 
 /// Tests returning a resource from an export.
 #[externref]
-pub extern "C" fn test_returning_resource(sender: Option<Resource<Sender>>) -> Resource<Sender> {
+#[resource(true)]
+pub extern "C" fn test_returning_resource(
+    #[resource] sender: Option<Resource<Sender>>,
+) -> Resource<Sender> {
     let sender = sender.expect("null");
     let message = "Hello, world!";
     unsafe {

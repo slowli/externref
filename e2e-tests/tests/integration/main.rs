@@ -153,6 +153,27 @@ fn inspect_refs(mut ctx: Caller<'_, Data>) {
     assertions(ctx, &refs);
 }
 
+#[tracing::instrument(skip(ctx))]
+fn inspect_message_ref(mut ctx: Caller<'_, Data>, resource_ptr: u32) {
+    let memory = ctx.get_export("memory").unwrap().into_memory().unwrap();
+    let mut buffer = [0_u8; 4];
+    memory
+        .read(&ctx, resource_ptr as usize, &mut buffer)
+        .unwrap();
+
+    // We know conversion to an index will work due to `repr(C)` on `Resource`.
+    let ref_idx = u64::from(u32::from_le_bytes(buffer));
+    tracing::info!(ref_idx, "read `Resource` data");
+
+    let refs_table = ctx.data().externrefs.unwrap();
+    let size = refs_table.size(&ctx);
+    assert!(ref_idx < size, "size={size}, ref_idx={ref_idx}");
+
+    let buffer_ref = refs_table.get(&mut ctx, ref_idx).unwrap();
+    let buffer_ref = buffer_ref.unwrap_extern().unwrap();
+    assert!(buffer_ref.data(&ctx).unwrap().unwrap().is::<Box<str>>());
+}
+
 fn assert_refs(
     mut ctx: impl AsContextMut,
     table: &Table,
@@ -203,6 +224,9 @@ fn create_linker(engine: &Engine) -> Linker<Data> {
         .unwrap();
     linker
         .func_wrap("test", "inspect_refs", inspect_refs)
+        .unwrap();
+    linker
+        .func_wrap("test", "inspect_message_ref", inspect_message_ref)
         .unwrap();
     linker.func_wrap("test", "drop_ref", drop_ref).unwrap();
     linker
