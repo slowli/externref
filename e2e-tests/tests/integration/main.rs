@@ -4,7 +4,6 @@ use std::{collections::HashSet, sync::Once};
 
 use anyhow::{Context, anyhow};
 use assert_matches::assert_matches;
-use externref::processor::Processor;
 use once_cell::sync::Lazy;
 use test_casing::{Product, test_casing};
 use tracing::{Level, Subscriber, subscriber::DefaultGuard};
@@ -17,18 +16,20 @@ use wasmtime::{
     Rooted, Store, Table,
 };
 
-use crate::compile::CompilationProfile;
+use crate::compile::{CompilationProfile, CompiledModule};
 
 mod compile;
 
 type RefAssertion = fn(Caller<'_, Data>, &Table);
 
-fn module_bytes(profile: CompilationProfile) -> &'static [u8] {
-    static UNOPTIMIZED_MODULE: Lazy<Vec<u8>> = Lazy::new(|| CompilationProfile::Wasm.compile());
-    static OPTIMIZED_MODULE: Lazy<Vec<u8>> =
+fn compile_module(profile: CompilationProfile) -> &'static CompiledModule {
+    static UNOPTIMIZED_MODULE: Lazy<CompiledModule> =
+        Lazy::new(|| CompilationProfile::Wasm.compile());
+    static OPTIMIZED_MODULE: Lazy<CompiledModule> =
         Lazy::new(|| CompilationProfile::OptimizedWasm.compile());
-    static DEBUG_MODULE: Lazy<Vec<u8>> = Lazy::new(|| CompilationProfile::Debug.compile());
-    static RELEASE_MODULE: Lazy<Vec<u8>> = Lazy::new(|| CompilationProfile::Release.compile());
+    static DEBUG_MODULE: Lazy<CompiledModule> = Lazy::new(|| CompilationProfile::Debug.compile());
+    static RELEASE_MODULE: Lazy<CompiledModule> =
+        Lazy::new(|| CompilationProfile::Release.compile());
 
     match profile {
         CompilationProfile::Wasm => &UNOPTIMIZED_MODULE,
@@ -43,7 +44,7 @@ fn create_fmt_subscriber() -> impl Subscriber + for<'a> LookupSpan<'a> {
         .pretty()
         .with_span_events(FmtSpan::CLOSE)
         .with_test_writer()
-        .with_env_filter("externref=debug")
+        .with_env_filter("info,externref=debug")
         .finish()
 }
 
@@ -195,6 +196,9 @@ fn create_linker(engine: &Engine) -> Linker<Data> {
         .func_wrap("test", "send_message", send_message)
         .unwrap();
     linker
+        .func_wrap("test", "send_message_copy", send_message)
+        .unwrap();
+    linker
         .func_wrap("test", "message_len", message_len)
         .unwrap();
     linker
@@ -208,10 +212,7 @@ fn create_linker(engine: &Engine) -> Linker<Data> {
 fn transform_module(profile: CompilationProfile, test_export: &str) {
     let (_guard, storage) = enable_tracing_assertions();
 
-    let module = Processor::default()
-        .set_drop_fn("test", "drop_ref")
-        .process_bytes(module_bytes(profile))
-        .unwrap();
+    let module = compile_module(profile).process();
     let module = Module::new(&Engine::default(), module).unwrap();
     let linker = create_linker(module.engine());
 
@@ -260,7 +261,7 @@ fn assert_tracing_output(storage: &Storage) {
     let spans = storage.scan_spans();
     let process_span = spans.single(&name(eq("process")));
     let matches =
-        level(Level::INFO) & message(eq("parsed custom section")) & field("functions.len", 7_u64);
+        level(Level::INFO) & message(eq("parsed custom section")) & field("functions.len", 9_u64);
     process_span.scan_events().single(&matches);
 
     let patch_imports_span = spans.single(&name(eq("patch_imports")));
@@ -295,7 +296,7 @@ fn assert_tracing_output(storage: &Storage) {
     let transformed_imports: HashSet<_> = transformed_imports.collect();
     assert_eq!(
         transformed_imports,
-        HashSet::from_iter(["send_message", "message_len"])
+        HashSet::from_iter(["send_message", "send_message_copy", "message_len"])
     );
 
     let transformed_exports = storage.all_spans().filter_map(|span| {
@@ -321,16 +322,13 @@ fn assert_tracing_output(storage: &Storage) {
     );
     assert_eq!(
         transformed_exports.len(),
-        3 + contains_export as usize + contains_export_with_casts as usize,
+        4 + contains_export as usize + contains_export_with_casts as usize,
         "{transformed_exports:?}"
     );
 }
 
 fn init_sender(profile: CompilationProfile) -> (Instance, Store<Data>, Rooted<ExternRef>) {
-    let module = Processor::default()
-        .set_drop_fn("test", "drop_ref")
-        .process_bytes(module_bytes(profile))
-        .unwrap();
+    let module = compile_module(profile).process();
     let module = Module::new(&Engine::default(), module).unwrap();
     let linker = create_linker(module.engine());
     let mut store = Store::new(module.engine(), Data::new(vec![]));
