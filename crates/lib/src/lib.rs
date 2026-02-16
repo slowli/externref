@@ -61,7 +61,7 @@
 //!   stored within the `Resource`, meaning that `Resource`s can be easily placed on heap.
 //! - Getting a reference from a `Resource` ("real" signature `fn(usize) -> externref`)
 //!   is an indexing operation for the `externref` table.
-//! - [`Resource::drop()`] ("real" signature `fn(usize)`) removes the reference from the table.
+//! - [`Register::drop()`] ("real" signature `fn(usize)`) removes the reference from the table.
 //!
 //! Real `externref`s are patched back to the imported / exported functions
 //! by the WASM module post-processor:
@@ -373,6 +373,32 @@ pub struct Resource<T, D = Register> {
 /// by the host side, or by implementing custom `Drop` logic for a higher-level `Resource` wrapper.
 /// In the extreme case, when the WASM module is short-lived, garbage collection of dead `externref`s may
 /// be summarily ignored.
+///
+/// For custom `Drop` logic, it may be useful to pass `ResourceCopy<_>` by value as a non-resource
+/// (see the [`externref`](macro@externref) macro docs) as follows.
+///
+/// ```no_run
+/// use externref::{externref, ResourceCopy};
+///
+/// #[externref]
+/// // ^ In this particular case, this attribute may be skipped.
+/// #[link(wasm_import_module = "data")]
+/// unsafe extern "C" {
+///     fn custom_drop(#[resource = false] data: ResourceCopy<CustomDrop>);
+///     // The host will receive `data: usize` - the 0-based index
+///     // of `externref` table entry the resource points to.
+/// }
+///
+/// struct CustomDrop(ResourceCopy<Self>);
+///
+/// impl Drop for CustomDrop {
+///     fn drop(&mut self) {
+///         unsafe { custom_drop(self.0); }
+///     }
+/// }
+/// ```
+///
+/// This relies on the fact that `ResourceCopy<_>` is guaranteed to have the identical layout as `usize`.
 pub type ResourceCopy<T> = Resource<T, Forget>;
 
 impl<T> Clone for ResourceCopy<T> {

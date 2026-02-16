@@ -2,7 +2,18 @@
 
 use crate::{imports, sealed};
 
-/// Trait for various drop behaviors for [`Resource`]s.
+/// Trait for various drop behaviors for [`Resource`](crate::Resource)s. This constrains the second type param
+/// in `Resource`.
+///
+/// The contents of this trait is an implementation detail. It cannot be implemented for external types.
+///
+/// Currently, 2 implementations are available:
+///
+/// - [`Register`] is the default implementation that implements RAII-style cleanup on drop, including
+///   calling a customizable hook if one was supplied to the [`Processor`](crate::processor::Processor::set_drop_fn()).
+/// - [`Forget`] is a no-op implementation corresponding to [`ResourceCopy`](crate::ResourceCopy).
+///
+/// See `Resource` and `ResourceCopy` docs for more context and examples of usage.
 pub trait DropGuard: sealed::Sealed {
     #[doc(hidden)] // implementation detail
     fn from_id(id: usize) -> Self;
