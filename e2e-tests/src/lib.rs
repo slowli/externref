@@ -33,7 +33,6 @@ mod imports {
 
     use crate::{Bytes, Sender};
 
-    #[cfg(target_arch = "wasm32")]
     type MessageCopy = ResourceCopy<Bytes>;
 
     #[cfg(target_arch = "wasm32")]
@@ -61,6 +60,10 @@ mod imports {
         /// This is unusual but valid resource usage.
         pub(crate) fn inspect_message_ref(#[resource = false] bytes: &Resource<Bytes>);
 
+        /// This is also valid because `Resource<..>` is guaranteed to have `usize` representation,
+        /// so the host essentially receives the index into the `externrefs` table.
+        pub(crate) fn inspect_message(#[resource = false] bytes: MessageCopy);
+
         #[link_name = "inspect_refs"]
         pub(crate) fn inspect_refs_on_host();
     }
@@ -79,13 +82,18 @@ mod imports {
         _: &Resource<Sender>,
         _: *const u8,
         _: usize,
-    ) -> ResourceCopy<Bytes> {
+    ) -> MessageCopy {
         panic!("only callable from WASM")
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) unsafe fn message_len(_: Option<&Resource<Bytes>>) -> usize {
         panic!("only callable from WASM")
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) unsafe fn inspect_message(_: MessageCopy) {
+        panic!("only callable from WASM");
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -153,6 +161,11 @@ pub extern "C" fn test_export_with_copies(sender: Resource<Sender>) {
     let messages: HashSet<_> =
         [message, other_message, message, message_copy, other_message].into();
     assert_eq!(messages.len(), 2);
+    for message in messages {
+        unsafe {
+            imports::inspect_message(message);
+        }
+    }
 }
 
 #[unsafe(export_name = concat!("test_export_", stringify!(with_casts)))]
@@ -198,7 +211,7 @@ pub extern "C" fn test_nulls2(sender: Option<&Resource<Sender>>, _unused: u32) {
     test_nulls(sender);
 }
 
-/// Tests returning a resource from an export.
+/// Tests returning a resource from an export (and also explicit `#[resource]` attributes).
 #[externref]
 #[resource(true)]
 pub extern "C" fn test_returning_resource(

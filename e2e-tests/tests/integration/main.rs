@@ -154,6 +154,21 @@ fn inspect_refs(mut ctx: Caller<'_, Data>) {
 }
 
 #[tracing::instrument(skip(ctx))]
+fn inspect_message(mut ctx: Caller<'_, Data>, ref_idx: u32) {
+    inspect_inner(&mut ctx, ref_idx.into());
+}
+
+fn inspect_inner(ctx: &mut Caller<'_, Data>, ref_idx: u64) {
+    let refs_table = ctx.data().externrefs.unwrap();
+    let size = refs_table.size(&ctx);
+    assert!(ref_idx < size, "size={size}, ref_idx={ref_idx}");
+
+    let buffer_ref = refs_table.get(&mut *ctx, ref_idx).unwrap();
+    let buffer_ref = buffer_ref.unwrap_extern().unwrap();
+    assert!(buffer_ref.data(&ctx).unwrap().unwrap().is::<Box<str>>());
+}
+
+#[tracing::instrument(skip(ctx))]
 fn inspect_message_ref(mut ctx: Caller<'_, Data>, resource_ptr: u32) {
     let memory = ctx.get_export("memory").unwrap().into_memory().unwrap();
     let mut buffer = [0_u8; 4];
@@ -165,13 +180,7 @@ fn inspect_message_ref(mut ctx: Caller<'_, Data>, resource_ptr: u32) {
     let ref_idx = u64::from(u32::from_le_bytes(buffer));
     tracing::info!(ref_idx, "read `Resource` data");
 
-    let refs_table = ctx.data().externrefs.unwrap();
-    let size = refs_table.size(&ctx);
-    assert!(ref_idx < size, "size={size}, ref_idx={ref_idx}");
-
-    let buffer_ref = refs_table.get(&mut ctx, ref_idx).unwrap();
-    let buffer_ref = buffer_ref.unwrap_extern().unwrap();
-    assert!(buffer_ref.data(&ctx).unwrap().unwrap().is::<Box<str>>());
+    inspect_inner(&mut ctx, ref_idx);
 }
 
 fn assert_refs(
@@ -224,6 +233,9 @@ fn create_linker(engine: &Engine) -> Linker<Data> {
         .unwrap();
     linker
         .func_wrap("test", "inspect_refs", inspect_refs)
+        .unwrap();
+    linker
+        .func_wrap("test", "inspect_message", inspect_message)
         .unwrap();
     linker
         .func_wrap("test", "inspect_message_ref", inspect_message_ref)
@@ -416,6 +428,9 @@ fn resource_copies(profile: CompilationProfile) {
     enable_tracing();
 
     let (instance, mut store, sender) = init_sender(profile);
+    let externrefs = instance.get_table(&mut store, "externrefs").unwrap();
+    store.data_mut().externrefs = Some(externrefs);
+
     let test_fn = instance
         .get_typed_func::<Option<Rooted<ExternRef>>, ()>(&mut store, "test_export_with_copies")
         .unwrap();
