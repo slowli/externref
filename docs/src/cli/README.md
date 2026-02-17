@@ -24,7 +24,7 @@ and some other information that could be useful for debugging.
 
 - [Use a pre-built binary](#downloads) for popular targets (x86_64 for Linux / macOS / Windows
   and AArch64 for macOS) from the `master` branch.
-- Use a pre-built binary for popular targets from [GitHub Releases](https://github.com/slowli/term-transcript/releases).
+- Use a pre-built binary for popular targets from [GitHub Releases](https://github.com/slowli/externref/releases).
 - [Use the app Docker image](docker.md).
 - [Build from sources](build.md) using Rust / `cargo`.
 
