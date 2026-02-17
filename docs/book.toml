@@ -1,0 +1,28 @@
+[book]
+title = "externref Documentation"
+authors = ["externref developers"]
+description = "This book documents externref library and command-line app"
+language = "en"
+
+[rust]
+edition = "2024"
+
+[output.html]
+site-url = "/externref"
+smart-punctuation = true
+git-repository-url = "https://github.com/slowli/externref/tree/main/docs"
+edit-url-template = "https://github.com/slowli/externref/tree/main/docs/{path}"
+
+[output.html.search]
+limit-results = 20
+use-boolean-and = true
+boost-title = 2
+boost-hierarchy = 2
+boost-paragraph = 1
+expand = true
+heading-split-level = 2
+
+[output.html.redirect]
+# Cheaply implemented redirect from the previously used crate docs location.
+# Only works for the root link to the crate docs.
+"/externref/index.html" = "../crates/externref"

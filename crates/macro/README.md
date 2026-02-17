@@ -1,11 +1,12 @@
 # Proc Macro For `externref`
 
-[![Build Status](https://github.com/slowli/externref/workflows/CI/badge.svg?branch=main)](https://github.com/slowli/externref/actions)
+[![CI](https://github.com/slowli/externref/actions/workflows/ci.yml/badge.svg)](https://github.com/slowli/externref/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue)](https://github.com/slowli/externref#license)
 ![rust 1.85+ required](https://img.shields.io/badge/rust-1.85+-blue.svg?label=Required%20Rust)
 
 **Documentation:** [![Docs.rs](https://docs.rs/externref-macro/badge.svg)](https://docs.rs/externref-macro/)
-[![crate docs (main)](https://img.shields.io/badge/main-yellow.svg?label=docs)](https://slowli.github.io/externref/externref_macro/)
+[![crate docs (main)](https://img.shields.io/badge/main-yellow.svg?label=docs)](https://slowli.github.io/externref/crates/externref_macro/)
+[![The Book](https://img.shields.io/badge/The%20Book-yellow?logo=mdbook)](https://slowli.github.io/externref/)
 
 This macro complements the [`externref`] library, wrapping imported or exported functions
 with `Resource` args and/or return type. These wrappers are what makes it possible to patch

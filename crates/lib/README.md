@@ -1,12 +1,13 @@
 # Low-Cost Reference Type Shims For WASM Modules
 
-[![Build Status](https://github.com/slowli/externref/workflows/CI/badge.svg?branch=main)](https://github.com/slowli/externref/actions)
+[![CI](https://github.com/slowli/externref/actions/workflows/ci.yml/badge.svg)](https://github.com/slowli/externref/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue)](https://github.com/slowli/externref#license)
-![rust 1.76+ required](https://img.shields.io/badge/rust-1.76+-blue.svg?label=Required%20Rust)
+![rust 1.85+ required](https://img.shields.io/badge/rust-1.85+-blue.svg?label=Required%20Rust)
 ![no_std supported](https://img.shields.io/badge/no__std-tested-green.svg)
 
 **Documentation:** [![Docs.rs](https://docs.rs/externref/badge.svg)](https://docs.rs/externref/)
-[![crate docs (main)](https://img.shields.io/badge/main-yellow.svg?label=docs)](https://slowli.github.io/externref/externref/)
+[![crate docs (main)](https://img.shields.io/badge/main-yellow.svg?label=docs)](https://slowli.github.io/externref/crates/externref/)
+[![The Book](https://img.shields.io/badge/The%20Book-yellow?logo=mdbook)](https://slowli.github.io/externref/)
 
 A [reference type] (aka `externref` or `anyref`) is an opaque reference made available to
 a WASM module by the host environment. Such references cannot be forged in the WASM code
@@ -74,6 +75,7 @@ These errors shouldn't occur if WASM is compiled in the release mode.
 
 Using the `#[externref]` macro and `Resource`s in WASM-targeting code:
 
+<!-- ANCHOR: example -->
 ```rust
 use externref::{externref, Resource};
 
@@ -104,6 +106,7 @@ pub extern "C" fn test_export(arena: &Resource<Arena>) {
     // Do something with `bytes`...
 }
 ```
+<!-- ANCHOR_END: example -->
 
 See crate docs for more examples of usage and implementation details.
 
