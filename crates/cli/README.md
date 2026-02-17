@@ -1,6 +1,6 @@
 # CLI for `externref` Crate
 
-[![Build Status](https://github.com/slowli/externref/workflows/CI/badge.svg?branch=main)](https://github.com/slowli/externref/actions)
+[![CI](https://github.com/slowli/externref/actions/workflows/ci.yml/badge.svg)](https://github.com/slowli/externref/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue)](https://github.com/slowli/externref#license)
 
 This crate provides command-line interface for [`externref`]. It allows transforming
