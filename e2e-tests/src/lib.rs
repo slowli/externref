@@ -9,6 +9,8 @@ use alloc::vec::Vec;
 use externref::{Resource, externref};
 use hashbrown::HashSet;
 
+mod imports;
+
 #[cfg(target_arch = "wasm32")]
 #[global_allocator]
 static ALLOC: dlmalloc::GlobalDlmalloc = dlmalloc::GlobalDlmalloc;
@@ -28,83 +30,8 @@ mod reexports {
     pub use externref as anyref;
 }
 
-mod imports {
-    use externref::{Resource, ResourceCopy};
-
-    use crate::{Bytes, Sender};
-
-    type MessageCopy = ResourceCopy<Bytes>;
-
-    #[cfg(target_arch = "wasm32")]
-    #[externref::externref]
-    #[link(wasm_import_module = "test")]
-    unsafe extern "C" {
-        // Test marking resource args explicitly
-        #[resource]
-        pub(crate) fn send_message(
-            #[resource] sender: &Resource<Sender>,
-            message_ptr: *const u8,
-            message_len: usize,
-        ) -> Resource<Bytes>;
-
-        #[resource]
-        pub(crate) fn send_message_copy(
-            sender: &Resource<Sender>,
-            message_ptr: *const u8,
-            message_len: usize,
-        ) -> MessageCopy;
-
-        pub(crate) fn message_len(bytes: Option<&Resource<Bytes>>) -> usize;
-
-        /// Inspects the pointer to the `Resource` rather than using the resource itself.
-        /// This is unusual but valid resource usage.
-        pub(crate) fn inspect_message_ref(#[resource = false] bytes: &Resource<Bytes>);
-
-        /// This is also valid because `Resource<..>` is guaranteed to have `usize` representation,
-        /// so the host essentially receives the index into the `externrefs` table.
-        pub(crate) fn inspect_message(#[resource = false] bytes: MessageCopy);
-
-        #[link_name = "inspect_refs"]
-        pub(crate) fn inspect_refs_on_host();
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) unsafe fn send_message(
-        _: &Resource<Sender>,
-        _: *const u8,
-        _: usize,
-    ) -> Resource<Bytes> {
-        panic!("only callable from WASM")
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) unsafe fn send_message_copy(
-        _: &Resource<Sender>,
-        _: *const u8,
-        _: usize,
-    ) -> MessageCopy {
-        panic!("only callable from WASM")
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) unsafe fn message_len(_: Option<&Resource<Bytes>>) -> usize {
-        panic!("only callable from WASM")
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) unsafe fn inspect_message(_: MessageCopy) {
-        panic!("only callable from WASM");
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) unsafe fn inspect_message_ref(_: &Resource<Bytes>) {
-        panic!("only callable from WASM");
-    }
-}
-
 /// Calls to the host to check the `externrefs` table.
 fn inspect_refs() {
-    #[cfg(target_arch = "wasm32")]
     unsafe {
         imports::inspect_refs_on_host();
     }
@@ -146,14 +73,17 @@ pub extern "C" fn test_export(sender: Resource<Sender>) {
 }
 
 #[allow(clippy::eq_op)] // intentional
+// ANCHOR: export_with_copies
 #[externref]
 pub extern "C" fn test_export_with_copies(sender: Resource<Sender>) {
     let str = "test";
     let message = unsafe { imports::send_message_copy(&sender, str.as_ptr(), str.len()) };
     let other_message = unsafe { imports::send_message(&sender, str.as_ptr(), str.len()) };
+    // `ResourceCopy` can be created by leaking a `Resource<_>`.
     let other_message = other_message.leak();
     let message_copy = message;
 
+    // `Resource`s implement pointer comparison semantics.
     assert!(message == message);
     assert!(message_copy == message);
     assert!(message != other_message);
@@ -167,6 +97,7 @@ pub extern "C" fn test_export_with_copies(sender: Resource<Sender>) {
         }
     }
 }
+// ANCHOR_END: export_with_copies
 
 #[unsafe(export_name = concat!("test_export_", stringify!(with_casts)))]
 // ^ tests manually specified name with a complex expression
