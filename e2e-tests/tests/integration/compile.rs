@@ -6,6 +6,8 @@ use std::{
     process::{Command, Stdio},
 };
 
+use externref::processor::Processor;
+
 fn target_dir() -> PathBuf {
     let mut path = env::current_exe().expect("Cannot get path to executing test");
     path.pop();
@@ -26,6 +28,7 @@ fn wasm_target_dir(target_dir: PathBuf, profile: &str) -> PathBuf {
     root_dir.join("wasm32-unknown-unknown").join(profile)
 }
 
+#[tracing::instrument(ret)]
 fn compile_wasm(profile: &str) -> PathBuf {
     let profile_arg = if profile == "debug" {
         "--profile=dev".to_owned() // the debug profile has differing `--profile` and output dir naming
@@ -40,6 +43,7 @@ fn compile_wasm(profile: &str) -> PathBuf {
         "wasm32-unknown-unknown",
         &profile_arg,
     ]);
+    tracing::info!(?command, "running compilation");
 
     let mut command = command
         .stdin(Stdio::null())
@@ -57,24 +61,45 @@ fn compile_wasm(profile: &str) -> PathBuf {
     wasm_dir.join(wasm_file)
 }
 
-fn optimize_wasm(wasm_file: &Path) -> PathBuf {
-    let mut opt_wasm_file = PathBuf::from(wasm_file);
-    opt_wasm_file.set_extension("opt.wasm");
+#[tracing::instrument(skip_all)]
+fn optimize_wasm(wasm_module: Vec<u8>, temp_dir: &Path) -> Vec<u8> {
+    let module_path = temp_dir.join("in.wasm");
+    fs::write(&module_path, &wasm_module).unwrap_or_else(|err| {
+        panic!(
+            "failed writing input module to `{}`: {err}",
+            module_path.display()
+        );
+    });
 
-    let mut command = Command::new("wasm-opt")
-        .args(["-Os", "--enable-mutable-globals", "--strip-debug"])
-        .arg("-o")
-        .args([opt_wasm_file.as_ref(), wasm_file])
-        .stdin(Stdio::null())
+    let output_path = temp_dir.join("out.wasm");
+    let mut command = Command::new("wasm-opt");
+    command
+        .args(["-Os", "--enable-mutable-globals", "--strip-debug", "-o"])
+        .arg(&output_path)
+        .arg(&module_path)
+        .stderr(Stdio::piped());
+    tracing::info!(?command, "running optimization");
+
+    let output = command
         .spawn()
-        .expect("cannot run wasm-opt");
-
-    let exit_status = command.wait().expect("failed waiting for wasm-opt");
+        .expect("cannot run wasm-opt")
+        .wait_with_output()
+        .expect("failed waiting for wasm-opt");
     assert!(
-        exit_status.success(),
-        "Optimizing WASM module finished abnormally: {exit_status}"
+        output.status.success(),
+        "Optimizing WASM module finished abnormally: {exit_status}\n---- stderr ----\n{err}",
+        exit_status = output.status,
+        err = String::from_utf8_lossy(&output.stderr)
     );
-    opt_wasm_file
+
+    let output = fs::read(&output_path).unwrap_or_else(|err| {
+        panic!(
+            "failed reading optimized module from `{}`: {err}",
+            output_path.display()
+        )
+    });
+    tracing::info!(output.len = output.len(), "optimized module");
+    output
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -96,16 +121,37 @@ impl CompilationProfile {
         }
     }
 
-    pub fn compile(self) -> Vec<u8> {
-        let mut wasm_file = compile_wasm(self.rust_profile());
-        if matches!(self, Self::OptimizedWasm) {
-            wasm_file = optimize_wasm(&wasm_file);
+    #[tracing::instrument]
+    pub fn compile(self) -> CompiledModule {
+        let wasm_file = compile_wasm(self.rust_profile());
+        let bytes = fs::read(&wasm_file).unwrap_or_else(|err| {
+            panic!("Error reading file `{}`: {err}", wasm_file.display());
+        });
+
+        CompiledModule {
+            bytes,
+            wasmopt: matches!(self, Self::OptimizedWasm),
         }
-        fs::read(&wasm_file).unwrap_or_else(|err| {
-            panic!(
-                "Error reading file `{}`: {err}",
-                wasm_file.to_string_lossy()
-            )
-        })
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct CompiledModule {
+    bytes: Vec<u8>,
+    wasmopt: bool,
+}
+
+impl CompiledModule {
+    pub(crate) fn process(&self) -> Vec<u8> {
+        let processed_module = Processor::default()
+            .set_drop_fn("test", "drop_ref")
+            .process_bytes(&self.bytes)
+            .unwrap();
+        if self.wasmopt {
+            let temp_dir = tempfile::tempdir().expect("cannot create temp dir");
+            optimize_wasm(processed_module, temp_dir.path())
+        } else {
+            processed_module
+        }
     }
 }

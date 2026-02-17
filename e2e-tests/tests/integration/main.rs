@@ -4,7 +4,6 @@ use std::{collections::HashSet, sync::Once};
 
 use anyhow::{Context, anyhow};
 use assert_matches::assert_matches;
-use externref::processor::Processor;
 use once_cell::sync::Lazy;
 use test_casing::{Product, test_casing};
 use tracing::{Level, Subscriber, subscriber::DefaultGuard};
@@ -17,18 +16,20 @@ use wasmtime::{
     Rooted, Store, Table,
 };
 
-use crate::compile::CompilationProfile;
+use crate::compile::{CompilationProfile, CompiledModule};
 
 mod compile;
 
 type RefAssertion = fn(Caller<'_, Data>, &Table);
 
-fn module_bytes(profile: CompilationProfile) -> &'static [u8] {
-    static UNOPTIMIZED_MODULE: Lazy<Vec<u8>> = Lazy::new(|| CompilationProfile::Wasm.compile());
-    static OPTIMIZED_MODULE: Lazy<Vec<u8>> =
+fn compile_module(profile: CompilationProfile) -> &'static CompiledModule {
+    static UNOPTIMIZED_MODULE: Lazy<CompiledModule> =
+        Lazy::new(|| CompilationProfile::Wasm.compile());
+    static OPTIMIZED_MODULE: Lazy<CompiledModule> =
         Lazy::new(|| CompilationProfile::OptimizedWasm.compile());
-    static DEBUG_MODULE: Lazy<Vec<u8>> = Lazy::new(|| CompilationProfile::Debug.compile());
-    static RELEASE_MODULE: Lazy<Vec<u8>> = Lazy::new(|| CompilationProfile::Release.compile());
+    static DEBUG_MODULE: Lazy<CompiledModule> = Lazy::new(|| CompilationProfile::Debug.compile());
+    static RELEASE_MODULE: Lazy<CompiledModule> =
+        Lazy::new(|| CompilationProfile::Release.compile());
 
     match profile {
         CompilationProfile::Wasm => &UNOPTIMIZED_MODULE,
@@ -43,7 +44,7 @@ fn create_fmt_subscriber() -> impl Subscriber + for<'a> LookupSpan<'a> {
         .pretty()
         .with_span_events(FmtSpan::CLOSE)
         .with_test_writer()
-        .with_env_filter("externref=debug")
+        .with_env_filter("info,externref=debug")
         .finish()
 }
 
@@ -152,6 +153,36 @@ fn inspect_refs(mut ctx: Caller<'_, Data>) {
     assertions(ctx, &refs);
 }
 
+#[tracing::instrument(skip(ctx))]
+fn inspect_message(mut ctx: Caller<'_, Data>, ref_idx: u32) {
+    inspect_inner(&mut ctx, ref_idx.into());
+}
+
+fn inspect_inner(ctx: &mut Caller<'_, Data>, ref_idx: u64) {
+    let refs_table = ctx.data().externrefs.unwrap();
+    let size = refs_table.size(&ctx);
+    assert!(ref_idx < size, "size={size}, ref_idx={ref_idx}");
+
+    let buffer_ref = refs_table.get(&mut *ctx, ref_idx).unwrap();
+    let buffer_ref = buffer_ref.unwrap_extern().unwrap();
+    assert!(buffer_ref.data(&ctx).unwrap().unwrap().is::<Box<str>>());
+}
+
+#[tracing::instrument(skip(ctx))]
+fn inspect_message_ref(mut ctx: Caller<'_, Data>, resource_ptr: u32) {
+    let memory = ctx.get_export("memory").unwrap().into_memory().unwrap();
+    let mut buffer = [0_u8; 4];
+    memory
+        .read(&ctx, resource_ptr as usize, &mut buffer)
+        .unwrap();
+
+    // We know conversion to an index will work due to `repr(C)` on `Resource`.
+    let ref_idx = u64::from(u32::from_le_bytes(buffer));
+    tracing::info!(ref_idx, "read `Resource` data");
+
+    inspect_inner(&mut ctx, ref_idx);
+}
+
 fn assert_refs(
     mut ctx: impl AsContextMut,
     table: &Table,
@@ -195,10 +226,19 @@ fn create_linker(engine: &Engine) -> Linker<Data> {
         .func_wrap("test", "send_message", send_message)
         .unwrap();
     linker
+        .func_wrap("test", "send_message_copy", send_message)
+        .unwrap();
+    linker
         .func_wrap("test", "message_len", message_len)
         .unwrap();
     linker
         .func_wrap("test", "inspect_refs", inspect_refs)
+        .unwrap();
+    linker
+        .func_wrap("test", "inspect_message", inspect_message)
+        .unwrap();
+    linker
+        .func_wrap("test", "inspect_message_ref", inspect_message_ref)
         .unwrap();
     linker.func_wrap("test", "drop_ref", drop_ref).unwrap();
     linker
@@ -208,10 +248,7 @@ fn create_linker(engine: &Engine) -> Linker<Data> {
 fn transform_module(profile: CompilationProfile, test_export: &str) {
     let (_guard, storage) = enable_tracing_assertions();
 
-    let module = Processor::default()
-        .set_drop_fn("test", "drop_ref")
-        .process_bytes(module_bytes(profile))
-        .unwrap();
+    let module = compile_module(profile).process();
     let module = Module::new(&Engine::default(), module).unwrap();
     let linker = create_linker(module.engine());
 
@@ -260,7 +297,7 @@ fn assert_tracing_output(storage: &Storage) {
     let spans = storage.scan_spans();
     let process_span = spans.single(&name(eq("process")));
     let matches =
-        level(Level::INFO) & message(eq("parsed custom section")) & field("functions.len", 7_u64);
+        level(Level::INFO) & message(eq("parsed custom section")) & field("functions.len", 9_u64);
     process_span.scan_events().single(&matches);
 
     let patch_imports_span = spans.single(&name(eq("patch_imports")));
@@ -295,7 +332,7 @@ fn assert_tracing_output(storage: &Storage) {
     let transformed_imports: HashSet<_> = transformed_imports.collect();
     assert_eq!(
         transformed_imports,
-        HashSet::from_iter(["send_message", "message_len"])
+        HashSet::from_iter(["send_message", "send_message_copy", "message_len"])
     );
 
     let transformed_exports = storage.all_spans().filter_map(|span| {
@@ -321,16 +358,13 @@ fn assert_tracing_output(storage: &Storage) {
     );
     assert_eq!(
         transformed_exports.len(),
-        3 + contains_export as usize + contains_export_with_casts as usize,
+        4 + contains_export as usize + contains_export_with_casts as usize,
         "{transformed_exports:?}"
     );
 }
 
 fn init_sender(profile: CompilationProfile) -> (Instance, Store<Data>, Rooted<ExternRef>) {
-    let module = Processor::default()
-        .set_drop_fn("test", "drop_ref")
-        .process_bytes(module_bytes(profile))
-        .unwrap();
+    let module = compile_module(profile).process();
     let module = Module::new(&Engine::default(), module).unwrap();
     let linker = create_linker(module.engine());
     let mut store = Store::new(module.engine(), Data::new(vec![]));
@@ -355,6 +389,8 @@ fn null_references(profile: CompilationProfile) {
 
 #[test_casing(4, CompilationProfile::ALL)]
 fn returning_resource_from_guest(profile: CompilationProfile) {
+    enable_tracing();
+
     let (instance, mut store, sender) = init_sender(profile);
     let test_fn = instance
         .get_typed_func::<Option<Rooted<ExternRef>>, Option<Rooted<ExternRef>>>(
@@ -385,4 +421,31 @@ fn returning_resource_from_guest(profile: CompilationProfile) {
     // The buffer should be dropped first, then the sender
     assert!(dropped[0].is::<Box<str>>());
     assert!(dropped[1].is::<HostSender>());
+}
+
+#[test_casing(4, CompilationProfile::ALL)]
+fn resource_copies(profile: CompilationProfile) {
+    enable_tracing();
+
+    let (instance, mut store, sender) = init_sender(profile);
+    let externrefs = instance.get_table(&mut store, "externrefs").unwrap();
+    store.data_mut().externrefs = Some(externrefs);
+
+    let test_fn = instance
+        .get_typed_func::<Option<Rooted<ExternRef>>, ()>(&mut store, "test_export_with_copies")
+        .unwrap();
+    test_fn.call(&mut store, Some(sender)).unwrap();
+
+    let externrefs = instance.get_table(&mut store, "externrefs").unwrap();
+    // We allocate 2 copied buffers: one via `-> ResourceCopy` and another by leaking the resource
+    assert_refs(&mut store, &externrefs, false, &[true, true]);
+
+    // The sender is the only resource that should have been dropped
+    let dropped = &store.data().dropped;
+    assert_eq!(dropped.len(), 1);
+    let dropped = dropped[0]
+        .data(&store)
+        .expect("reference was unexpectedly garbage-collected")
+        .unwrap();
+    assert!(dropped.is::<HostSender>());
 }

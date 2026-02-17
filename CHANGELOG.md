@@ -8,6 +8,11 @@ The project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html)
 ### Added
 
 - Implement `PartialEq`, `Eq` and `Hash` traits for `Resource`s based on (externref) pointer comparison.
+- Implement copyable resources by customizing `Resource` drop logic (via another type param). These resources
+  do not execute *any* logic on drop.
+- **macro:** Allow marking arguments and return types of transformed functions as resources / not resources
+  via the `#[resource]` attribute. (To signal that an argument or return type is not a resource, one may use
+  `#[resource = false]` or `#[resource(false)]`.)
 
 ### Changed
 

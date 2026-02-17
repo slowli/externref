@@ -21,6 +21,7 @@ anyhow.workspace = true
 assert_matches.workspace = true
 once_cell.workspace = true
 predicates.workspace = true
+tempfile.workspace = true
 test-casing.workspace = true
 tracing.workspace = true
 tracing-capture.workspace = true

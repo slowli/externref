@@ -5,7 +5,7 @@ use quote::{ToTokens, quote};
 use syn::{
     Attribute, Expr, ExprLit, FnArg, ForeignItem, GenericArgument, Ident, ItemFn, ItemForeignMod,
     Lit, LitStr, Meta, PatType, Path, PathArguments, Signature, Token, Type, TypePath, Visibility,
-    parse::Error as SynError, punctuated::Punctuated, spanned::Spanned,
+    punctuated::Punctuated, spanned::Spanned,
 };
 
 use crate::ExternrefAttrs;
@@ -14,22 +14,22 @@ fn check_abi(
     target_name: &str,
     abi_name: Option<&LitStr>,
     root_span: &impl ToTokens,
-) -> Result<(), SynError> {
+) -> syn::Result<()> {
     let abi_name = abi_name.ok_or_else(|| {
         let msg = format!("{target_name} must be marked with `extern \"C\"`");
-        SynError::new_spanned(root_span, msg)
+        syn::Error::new_spanned(root_span, msg)
     })?;
     if abi_name.value() != "C" {
         let msg = format!(
             "Unexpected ABI {} for {target_name}; expected `C`",
             abi_name.value()
         );
-        return Err(SynError::new(abi_name.span(), msg));
+        return Err(syn::Error::new(abi_name.span(), msg));
     }
     Ok(())
 }
 
-fn attr_expr(attrs: &[Attribute], name: &str) -> Result<Option<Expr>, SynError> {
+fn attr_expr(attrs: &[Attribute], name: &str) -> syn::Result<Option<Expr>> {
     let attr = attrs.iter().find(|attr| attr.path().is_ident(name));
     let Some(attr) = attr else {
         return Ok(None);
@@ -37,6 +37,36 @@ fn attr_expr(attrs: &[Attribute], name: &str) -> Result<Option<Expr>, SynError> 
 
     let name_value = attr.meta.require_name_value()?;
     Ok(Some(name_value.value.clone()))
+}
+
+fn take_resource_attr(attrs: &mut Vec<Attribute>) -> syn::Result<Option<bool>> {
+    let Some(attr_idx) = attrs
+        .iter()
+        .position(|attr| attr.path().is_ident("resource"))
+    else {
+        return Ok(None);
+    };
+    let resource_attr = attrs.remove(attr_idx);
+    Ok(Some(match &resource_attr.meta {
+        Meta::Path(_) => true,
+        Meta::List(list) => {
+            let flag: syn::LitBool = list.parse_args()?;
+            flag.value()
+        }
+        Meta::NameValue(name_value) => {
+            if let Expr::Lit(ExprLit {
+                lit: Lit::Bool(flag),
+                ..
+            }) = &name_value.value
+            {
+                flag.value()
+            } else {
+                let msg =
+                    "Unsupported #[resource] attribute; use `#[resource]` or `#[resource = false]`";
+                return Err(syn::Error::new(name_value.span(), msg));
+            }
+        }
+    }))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -49,31 +79,39 @@ enum SimpleResourceKind {
 impl SimpleResourceKind {
     fn is_resource(ty: &TypePath) -> bool {
         ty.path.segments.last().is_some_and(|segment| {
-            segment.ident == "Resource"
+            (segment.ident == "Resource" || segment.ident == "ResourceCopy")
                 && matches!(
                     &segment.arguments,
-                    PathArguments::AngleBracketed(args) if args.args.len() == 1
+                    PathArguments::AngleBracketed(args) if (1..=2).contains(&args.args.len())
                 )
         })
     }
 
-    fn from_type(ty: &Type) -> Option<Self> {
-        match ty {
-            Type::Path(path) if Self::is_resource(path) => Some(Self::Owned),
+    fn from_type(ty: &Type, attr: Option<bool>) -> syn::Result<Option<Self>> {
+        Ok(match ty {
+            Type::Path(path) => attr
+                .unwrap_or_else(|| Self::is_resource(path))
+                .then_some(Self::Owned),
             Type::Reference(reference) => {
                 if let Type::Path(path) = reference.elem.as_ref() {
-                    if Self::is_resource(path) {
-                        return Some(if reference.mutability.is_some() {
+                    if attr.unwrap_or_else(|| Self::is_resource(path)) {
+                        return Ok(Some(if reference.mutability.is_some() {
                             Self::MutRef
                         } else {
                             Self::Ref
-                        });
+                        }));
                     }
                 }
                 None
             }
-            _ => None,
-        }
+            _ => {
+                if attr.is_some() {
+                    let message = "type cannot be marked as resource";
+                    return Err(syn::Error::new_spanned(ty, message));
+                }
+                None
+            }
+        })
     }
 }
 
@@ -104,17 +142,23 @@ impl ResourceKind {
         None
     }
 
-    fn from_type(ty: &Type) -> Option<Self> {
-        if let Some(kind) = SimpleResourceKind::from_type(ty) {
-            return Some(kind.into());
+    fn from_type(ty: &Type, attr: Option<bool>) -> syn::Result<Option<Self>> {
+        let mut base_ty = ty;
+        let mut is_option = false;
+        if let Type::Path(path) = ty {
+            if let Some(optional_ty) = Self::parse_option(path) {
+                base_ty = optional_ty;
+                is_option = true;
+            }
         }
 
-        if let Type::Path(path) = ty {
-            Self::parse_option(path)
-                .and_then(|inner_ty| SimpleResourceKind::from_type(inner_ty).map(Self::Option))
+        let kind = SimpleResourceKind::from_type(base_ty, attr)?;
+        let kind = if is_option {
+            kind.map(Self::Option)
         } else {
-            None
-        }
+            kind.map(Self::from)
+        };
+        Ok(kind)
     }
 
     fn simple_kind(self) -> SimpleResourceKind {
@@ -175,43 +219,59 @@ struct Function {
 }
 
 impl Function {
-    fn new(function: &ItemFn, attrs: &ExternrefAttrs) -> Result<Self, SynError> {
+    fn new(function: &mut ItemFn, attrs: &ExternrefAttrs) -> syn::Result<Self> {
         let abi_name = function.sig.abi.as_ref().and_then(|abi| abi.name.as_ref());
         check_abi("exported function", abi_name, &function.sig)?;
 
         if let Some(variadic) = &function.sig.variadic {
             let msg = "Variadic functions are not supported";
-            return Err(SynError::new_spanned(variadic, msg));
+            return Err(syn::Error::new_spanned(variadic, msg));
         }
         let export_name = attr_expr(&function.attrs, "export_name")?;
-        Ok(Self::from_sig(&function.sig, export_name, attrs))
+        let ret_resource_attr = take_resource_attr(&mut function.attrs)?;
+        Self::from_sig(&mut function.sig, export_name, attrs, ret_resource_attr)
     }
 
-    fn from_sig(sig: &Signature, name_override: Option<Expr>, attrs: &ExternrefAttrs) -> Self {
-        let resource_args = sig.inputs.iter().enumerate().filter_map(|(i, arg)| {
-            if let FnArg::Typed(PatType { ty, .. }) = arg {
-                return ResourceKind::from_type(ty).map(|kind| (i, kind));
+    fn from_sig(
+        sig: &mut Signature,
+        name_override: Option<Expr>,
+        attrs: &ExternrefAttrs,
+        ret_resource_attr: Option<bool>,
+    ) -> syn::Result<Self> {
+        let mut resource_args = HashMap::new();
+        for (i, arg) in sig.inputs.iter_mut().enumerate() {
+            if let FnArg::Typed(PatType { ty, attrs, .. }) = arg {
+                let resource_attr = take_resource_attr(attrs)?;
+                if let Some(kind) = ResourceKind::from_type(ty, resource_attr)? {
+                    resource_args.insert(i, kind);
+                }
             }
-            None
-        });
+        }
+
         let return_type = match &sig.output {
-            syn::ReturnType::Type(_, ty) => {
-                ResourceKind::from_type(ty).map_or(ReturnType::NotResource, ReturnType::Resource)
+            syn::ReturnType::Type(_, ty) => ResourceKind::from_type(ty, ret_resource_attr)?
+                .map_or(ReturnType::NotResource, ReturnType::Resource),
+            syn::ReturnType::Default => {
+                if ret_resource_attr.is_some() {
+                    let message =
+                        "#[resource] can only be placed on a function with an explicit return type";
+                    return Err(syn::Error::new_spanned(sig, message));
+                }
+                ReturnType::Default
             }
-            syn::ReturnType::Default => ReturnType::Default,
         };
         let name = name_override.unwrap_or_else(|| {
             let str = sig.ident.to_string();
             syn::parse_quote!(#str)
         });
 
-        Self {
+        Ok(Self {
             name,
+            resource_args,
             arg_count: sig.inputs.len(),
-            resource_args: resource_args.collect(),
             return_type,
             crate_path: attrs.crate_path(),
-        }
+        })
     }
 
     fn needs_declaring(&self) -> bool {
@@ -426,7 +486,7 @@ struct Imports {
 }
 
 impl Imports {
-    fn new(module: &mut ItemForeignMod, attrs: &ExternrefAttrs) -> Result<Self, SynError> {
+    fn new(module: &mut ItemForeignMod, attrs: &ExternrefAttrs) -> syn::Result<Self> {
         const NO_ATTR_MSG: &str = "#[link(wasm_import_module = \"..\")] must be specified \
             on the foreign module";
 
@@ -437,7 +497,7 @@ impl Imports {
             .iter()
             .find(|attr| attr.path().is_ident("link"));
         let Some(link_attr) = link_attr else {
-            return Err(SynError::new_spanned(module, NO_ATTR_MSG));
+            return Err(syn::Error::new_spanned(module, NO_ATTR_MSG));
         };
 
         let module_name = if matches!(link_attr.meta, Meta::List(_)) {
@@ -452,11 +512,11 @@ impl Imports {
         } else {
             let msg =
                 "Unexpected contents of `#[link(..)]` attr (expected a list of name-value pairs)";
-            return Err(SynError::new_spanned(link_attr, msg));
+            return Err(syn::Error::new_spanned(link_attr, msg));
         };
 
         let module_name =
-            module_name.ok_or_else(|| SynError::new_spanned(link_attr, NO_ATTR_MSG))?;
+            module_name.ok_or_else(|| syn::Error::new_spanned(link_attr, NO_ATTR_MSG))?;
         let module_name = if let Expr::Lit(ExprLit {
             lit: Lit::Str(str), ..
         }) = module_name
@@ -464,7 +524,7 @@ impl Imports {
             str.value()
         } else {
             let msg = "Unexpected WASM module name format (expected a string)";
-            return Err(SynError::new(module_name.span(), msg));
+            return Err(syn::Error::new(module_name.span(), msg));
         };
 
         let cr = attrs.crate_path();
@@ -473,7 +533,9 @@ impl Imports {
             if let ForeignItem::Fn(fn_item) = item {
                 let link_name = attr_expr(&fn_item.attrs, "link_name")?;
                 let has_link_name = link_name.is_some();
-                let function = Function::from_sig(&fn_item.sig, link_name, attrs);
+                let ret_resource_attr = take_resource_attr(&mut fn_item.attrs)?;
+                let function =
+                    Function::from_sig(&mut fn_item.sig, link_name, attrs, ret_resource_attr)?;
                 if !function.needs_declaring() {
                     continue;
                 }
@@ -546,7 +608,7 @@ mod tests {
 
     #[test]
     fn declaring_signature_for_export() {
-        let export_fn: ItemFn = syn::parse_quote! {
+        let mut export_fn: ItemFn = syn::parse_quote! {
             pub extern "C" fn test_export(
                 sender: &mut Resource<Sender>,
                 buffer: Resource<Buffer>,
@@ -555,7 +617,7 @@ mod tests {
                 // does nothing
             }
         };
-        let parsed = Function::new(&export_fn, &ExternrefAttrs::default()).unwrap();
+        let parsed = Function::new(&mut export_fn, &ExternrefAttrs::default()).unwrap();
         assert!(parsed.needs_declaring());
 
         let declaration = parsed.declare(None);
@@ -575,7 +637,7 @@ mod tests {
 
     #[test]
     fn transforming_export() {
-        let export_fn: ItemFn = syn::parse_quote! {
+        let mut export_fn: ItemFn = syn::parse_quote! {
             pub extern "C" fn test_export(
                 sender: &mut Resource<Sender>,
                 buffer: Option<Resource<Buffer>>,
@@ -584,7 +646,7 @@ mod tests {
                 // does nothing
             }
         };
-        let parsed = Function::new(&export_fn, &ExternrefAttrs::default()).unwrap();
+        let parsed = Function::new(&mut export_fn, &ExternrefAttrs::default()).unwrap();
         assert_eq!(parsed.resource_args.len(), 2);
         assert_eq!(parsed.resource_args[&0], SimpleResourceKind::MutRef.into());
         assert_eq!(
@@ -615,15 +677,52 @@ mod tests {
     }
 
     #[test]
+    fn transforming_export_with_resource_attrs() {
+        let mut export_fn: ItemFn = syn::parse_quote! {
+            pub extern "C" fn test_with_attrs(
+                #[resource = false] sender: &Resource<Sender>,
+                #[resource] test: Option<TestResource>,
+            ) {
+                // does nothing
+            }
+        };
+        let parsed = Function::new(&mut export_fn, &ExternrefAttrs::default()).unwrap();
+        assert_eq!(parsed.resource_args.len(), 1);
+        assert_eq!(
+            parsed.resource_args[&1],
+            ResourceKind::Option(SimpleResourceKind::Owned)
+        );
+        assert_eq!(parsed.return_type, ReturnType::Default);
+
+        let wrapper = parsed.wrap_export(&export_fn, None);
+        let wrapper: syn::Item = syn::parse_quote!(#wrapper);
+        let expected: syn::Item = syn::parse_quote! {
+            const _: () = {
+                #[unsafe(export_name = "test_with_attrs")]
+                unsafe extern "C" fn __externref_export(
+                    __arg0: &Resource<Sender>,
+                    __arg1: externref::ExternRef,
+                ) {
+                    test_with_attrs(
+                        __arg0,
+                        externref::Resource::new(__arg1),
+                    );
+                }
+            };
+        };
+        assert_eq!(wrapper, expected, "{}", quote!(#wrapper));
+    }
+
+    #[test]
     fn wrapper_for_import() {
-        let sig: Signature = syn::parse_quote! {
+        let mut sig: Signature = syn::parse_quote! {
             fn send_message(
                 sender: &Resource<Sender>,
                 message_ptr: *const u8,
                 message_len: usize,
             ) -> Resource<Bytes>
         };
-        let parsed = Function::from_sig(&sig, None, &ExternrefAttrs::default());
+        let parsed = Function::from_sig(&mut sig, None, &ExternrefAttrs::default(), None).unwrap();
 
         let (wrapper, ident) = parsed.wrap_import(&Visibility::Inherited, sig);
         assert_eq!(ident, "__externref_send_message");

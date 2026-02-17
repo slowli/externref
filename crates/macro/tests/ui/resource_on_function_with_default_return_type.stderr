@@ -1,0 +1,11 @@
+error: #[resource] can only be placed on a function with an explicit return type
+ --> tests/ui/resource_on_function_with_default_return_type.rs:7:5
+  |
+7 |     fn test_import(some_ptr: *mut u8);
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: #[resource] can only be placed on a function with an explicit return type
+  --> tests/ui/resource_on_function_with_default_return_type.rs:12:5
+   |
+12 | pub extern "C" fn test_export(some_ptr: *const u8) {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -77,8 +77,16 @@ impl ExternrefAttrs {
 ///
 /// The following arg / return types are recognized as resources:
 ///
-/// - `Resource<_>`, `&Resource<_>`, `&mut Resource<_>`
-/// - `Option<_>` of any of the above three variations
+/// - `Resource<..>`, `&Resource<..>`, `&mut Resource<..>` with one or two type args
+/// - `ResourceCopy<..>` and its references
+/// - `Option<_>` of the above six variations
+///
+/// For complex cases, resource detection can be controlled with a `#[resource]` attribute.
+/// This attribute can be placed on a function arg or on the function itself (in which case it corresponds
+/// to the return type; attributes cannot be placed on the return type directly).
+///
+/// - `#[resource]`, `#[resource = true]` or `#[resource(true)]` mark an arg / return type as a resource.
+/// - `#[resource = false]` or `#[resource(false)]` mark an arg / return type as a non-resource.
 #[proc_macro_attribute]
 pub fn externref(attr: TokenStream, input: TokenStream) -> TokenStream {
     const MSG: &str = "Unsupported item; only `extern \"C\" {}` modules and `extern \"C\" fn ...` \

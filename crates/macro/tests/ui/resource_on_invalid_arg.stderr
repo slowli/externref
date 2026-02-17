@@ -1,0 +1,11 @@
+error: type cannot be marked as resource
+ --> tests/ui/resource_on_invalid_arg.rs:6:50
+  |
+6 |     fn test_import(#[resource = false] some_ptr: *mut u8);
+  |                                                  ^^^^^^^
+
+error: type cannot be marked as resource
+  --> tests/ui/resource_on_invalid_arg.rs:10:53
+   |
+10 | pub extern "C" fn test_export(#[resource] some_ptr: *const u8) {
+   |                                                     ^^^^^^^^^

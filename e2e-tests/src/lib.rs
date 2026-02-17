@@ -29,21 +29,40 @@ mod reexports {
 }
 
 mod imports {
-    use externref::Resource;
+    use externref::{Resource, ResourceCopy};
 
     use crate::{Bytes, Sender};
+
+    type MessageCopy = ResourceCopy<Bytes>;
 
     #[cfg(target_arch = "wasm32")]
     #[externref::externref]
     #[link(wasm_import_module = "test")]
     unsafe extern "C" {
+        // Test marking resource args explicitly
+        #[resource]
         pub(crate) fn send_message(
-            sender: &Resource<Sender>,
+            #[resource] sender: &Resource<Sender>,
             message_ptr: *const u8,
             message_len: usize,
         ) -> Resource<Bytes>;
 
+        #[resource]
+        pub(crate) fn send_message_copy(
+            sender: &Resource<Sender>,
+            message_ptr: *const u8,
+            message_len: usize,
+        ) -> MessageCopy;
+
         pub(crate) fn message_len(bytes: Option<&Resource<Bytes>>) -> usize;
+
+        /// Inspects the pointer to the `Resource` rather than using the resource itself.
+        /// This is unusual but valid resource usage.
+        pub(crate) fn inspect_message_ref(#[resource = false] bytes: &Resource<Bytes>);
+
+        /// This is also valid because `Resource<..>` is guaranteed to have `usize` representation,
+        /// so the host essentially receives the index into the `externrefs` table.
+        pub(crate) fn inspect_message(#[resource = false] bytes: MessageCopy);
 
         #[link_name = "inspect_refs"]
         pub(crate) fn inspect_refs_on_host();
@@ -59,8 +78,27 @@ mod imports {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) unsafe fn send_message_copy(
+        _: &Resource<Sender>,
+        _: *const u8,
+        _: usize,
+    ) -> MessageCopy {
+        panic!("only callable from WASM")
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) unsafe fn message_len(_: Option<&Resource<Bytes>>) -> usize {
         panic!("only callable from WASM")
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) unsafe fn inspect_message(_: MessageCopy) {
+        panic!("only callable from WASM");
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) unsafe fn inspect_message_ref(_: &Resource<Bytes>) {
+        panic!("only callable from WASM");
     }
 }
 
@@ -82,6 +120,12 @@ pub extern "C" fn test_export(sender: Resource<Sender>) {
         });
     let mut messages: Vec<_> = messages.collect();
 
+    for message in &messages {
+        unsafe {
+            imports::inspect_message_ref(message);
+        }
+    }
+
     // Check `PartialEq` for messages.
     for (i, lhs) in messages.iter().enumerate() {
         for (j, rhs) in messages.iter().enumerate() {
@@ -99,6 +143,29 @@ pub extern "C" fn test_export(sender: Resource<Sender>) {
 
     drop(messages);
     inspect_refs();
+}
+
+#[allow(clippy::eq_op)] // intentional
+#[externref]
+pub extern "C" fn test_export_with_copies(sender: Resource<Sender>) {
+    let str = "test";
+    let message = unsafe { imports::send_message_copy(&sender, str.as_ptr(), str.len()) };
+    let other_message = unsafe { imports::send_message(&sender, str.as_ptr(), str.len()) };
+    let other_message = other_message.leak();
+    let message_copy = message;
+
+    assert!(message == message);
+    assert!(message_copy == message);
+    assert!(message != other_message);
+
+    let messages: HashSet<_> =
+        [message, other_message, message, message_copy, other_message].into();
+    assert_eq!(messages.len(), 2);
+    for message in messages {
+        unsafe {
+            imports::inspect_message(message);
+        }
+    }
 }
 
 #[unsafe(export_name = concat!("test_export_", stringify!(with_casts)))]
@@ -144,9 +211,12 @@ pub extern "C" fn test_nulls2(sender: Option<&Resource<Sender>>, _unused: u32) {
     test_nulls(sender);
 }
 
-/// Tests returning a resource from an export.
+/// Tests returning a resource from an export (and also explicit `#[resource]` attributes).
 #[externref]
-pub extern "C" fn test_returning_resource(sender: Option<Resource<Sender>>) -> Resource<Sender> {
+#[resource(true)]
+pub extern "C" fn test_returning_resource(
+    #[resource] sender: Option<Resource<Sender>>,
+) -> Resource<Sender> {
     let sender = sender.expect("null");
     let message = "Hello, world!";
     unsafe {
