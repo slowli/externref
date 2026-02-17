@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"attr":["externref"],"enum":["FunctionKind","ReadErrorKind"],"mod":["processor"],"struct":["BitSlice","Forget","Function","ReadError","Register","Resource"],"trait":["DropGuard"],"type":["ResourceCopy"]};

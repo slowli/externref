@@ -1,0 +1,2 @@
+createSrcSidebar('[["externref",["",[["processor",[],["error.rs","functions.rs","mod.rs","state.rs"]]],["error.rs","guard.rs","imports.rs","lib.rs","resource.rs","signature.rs","surrogate.rs"]]],["externref_macro",["",[],["externref.rs","lib.rs"]]]]');
+//{"start":19,"fragment_lengths":[175,54]}
