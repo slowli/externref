@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/slowli/externref/actions/workflows/ci.yml/badge.svg)](https://github.com/slowli/externref/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue)](https://github.com/slowli/externref#license)
+[![The Book](https://img.shields.io/badge/The%20Book-yellow?logo=mdbook)](https://slowli.github.io/externref/)
 
 A [reference type] (aka `externref` or `anyref`) is an opaque reference made available to
 a WASM module by the host environment. Such references cannot be forged in the WASM code

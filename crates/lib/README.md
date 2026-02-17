@@ -7,6 +7,7 @@
 
 **Documentation:** [![Docs.rs](https://docs.rs/externref/badge.svg)](https://docs.rs/externref/)
 [![crate docs (main)](https://img.shields.io/badge/main-yellow.svg?label=docs)](https://slowli.github.io/externref/externref/)
+[![The Book](https://img.shields.io/badge/The%20Book-yellow?logo=mdbook)](https://slowli.github.io/externref/)
 
 A [reference type] (aka `externref` or `anyref`) is an opaque reference made available to
 a WASM module by the host environment. Such references cannot be forged in the WASM code

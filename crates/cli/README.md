@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/slowli/externref/actions/workflows/ci.yml/badge.svg)](https://github.com/slowli/externref/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue)](https://github.com/slowli/externref#license)
+[![The Book](https://img.shields.io/badge/The%20Book-yellow?logo=mdbook)](https://slowli.github.io/externref/)
 
 This crate provides command-line interface for [`externref`]. It allows transforming
 WASM modules that use `externref` shims to use real `externref` types.
@@ -17,49 +18,17 @@ cargo install --locked externref-cli
 externref --help
 ```
 
-By default, tracing is enabled via the `tracing` crate feature. You can disable
-the feature manually by adding a `--no-default-features` arg to the installation command.
-Tracing is performed with the `externref::*` targets, mostly on the `DEBUG` and `INFO` levels.
-Tracing events are output to the stderr using [the standard subscriber][fmt-subscriber];
-its filtering can be configured using the `RUST_LOG` env variable
-(e.g., `RUST_LOG=externref=debug`).
-
-Alternatively, you may use the app Docker image [as described below](#using-docker-image),
-or download a pre-built app binary for popular targets (x86_64 for Linux / macOS / Windows
-and AArch64 for macOS)
-from [GitHub Releases](https://github.com/slowli/externref/releases).
-
-### Minimum supported Rust version
-
-The crate supports the latest stable Rust version. It may support previous stable Rust versions,
-but this is not guaranteed.
+See [the Book](https://slowli.github.io/externref/cli/#installation-options) for more installation options.
 
 ## Usage
 
 The executable provides the same functionality as the WASM [`processor`]
-from the `externref` crate. See its docs and the output of `externref --help`
+from the `externref` crate. See its docs, [the Book](https://slowli.github.io/externref/cli/) and the output of `externref --help`
 for a detailed description of available options.
 
-> **Warning**
+> [!WARNING]
 >
-> The processor should run before WASM optimization tools such as
-> `wasm-opt` from binaryen.
-
-### Using Docker image
-
-As a lower-cost alternative to the local installation, you may install and use the CLI app
-from the [GitHub Container registry](https://github.com/slowli/externref/pkgs/container/externref).
-To run the app in a Docker container, use a command like
-
-```shell
-docker run -i --rm ghcr.io/slowli/externref:main - \
-  < module.wasm \
-  > processed-module.wasm
-```
-
-Here, `-` is the argument to the CLI app instructing to read the input module from the stdin.
-To output tracing information, set the `RUST_LOG` env variable in the container,
-e.g. using `docker run --env RUST_LOG=debug ...`.
+> The processor should run before WASM optimization tools such as `wasm-opt` from binaryen.
 
 ### Examples
 
@@ -80,6 +49,5 @@ for inclusion in `externref` by you, as defined in the Apache-2.0 license,
 shall be dual licensed as above, without any additional terms or conditions.
 
 [`externref`]: https://crates.io/crates/externref
-[fmt-subscriber]: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/index.html
 [`processor`]: https://slowli.github.io/externref/externref/processor/
 [output-with-tracing]: https://github.com/slowli/externref/raw/HEAD/crates/cli/tests/snapshots/with-tracing.svg?sanitize=true
