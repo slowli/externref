@@ -30,6 +30,7 @@ tracing = { workspace = true, optional = true }
 [dev-dependencies]
 assert_matches.workspace = true
 doc-comment.workspace = true
+static_assertions.workspace = true
 version-sync.workspace = true
 wat.workspace = true
 

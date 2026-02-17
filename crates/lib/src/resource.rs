@@ -26,7 +26,7 @@ use crate::{DropGuard, ExternRef, Forget, Register, imports};
 ///
 /// # Cloning
 ///
-/// By default, resources may have [configurable logic executed on drop](processor::Processor::set_drop_fn())
+/// By default, resources may have [configurable logic executed on drop](crate::processor::Processor::set_drop_fn())
 /// (e.g., to have RAII-style resource management on the host side). Dropping the resource also cleans up the resource slot
 /// in the `externref` table.
 /// Thus, `Resource` intentionally doesn't implement [`Clone`] or [`Copy`]. To clone such a resource,
@@ -35,6 +35,12 @@ use crate::{DropGuard, ExternRef, Forget, Register, imports};
 /// As an alternative, you may use [`ResourceCopy`]. This is a version of `Resource` that does not
 /// execute *any* logic on drop (not even cleaning up the `externref` table entry!). As a consequence,
 /// `ResourceCopy` may be copied across the app.
+///
+/// # Memory layout
+///
+/// `Resource` with any type params is guaranteed to have the same layout as `usize`. When cast to `usize`
+/// (e.g., by passing a `Resource` value to a WASM import fn), the value is the index of the externref
+/// in the corresponding WASM table (see [*How it works*](crate#how-it-works) in the crate level-docs for details).
 ///
 /// # Examples
 ///
@@ -145,7 +151,7 @@ pub struct Resource<T, D = Register> {
 /// be summarily ignored.
 ///
 /// For custom `Drop` logic, it may be useful to pass `ResourceCopy<_>` by value as a non-resource
-/// (see the [`externref`](macro@externref) macro docs) as follows.
+/// (see the [`externref`](macro@crate::externref) macro docs) as follows.
 ///
 /// ```no_run
 /// use externref::{externref, ResourceCopy};
@@ -272,7 +278,12 @@ impl<T, D: DropGuard> Resource<T, D> {
     /// Upcasts a reference to this resource to a generic resource reference.
     #[allow(clippy::missing_panics_doc)] // sanity check; should never be triggered.
     pub fn upcast_ref(&self) -> &Resource<(), D> {
-        assert_eq!(Layout::new::<Self>(), Layout::new::<Resource<(), D>>());
+        const {
+            let this_layout = Layout::new::<Self>();
+            let target_layout = Layout::new::<Resource<(), D>>();
+            assert!(this_layout.size() == target_layout.size());
+            assert!(this_layout.align() == target_layout.align());
+        }
 
         let ptr = ptr::from_ref(self).cast::<Resource<(), D>>();
         unsafe {
@@ -313,4 +324,21 @@ impl<T, D: DropGuard> Hash for Resource<T, D> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.drop_guard.as_id().hash(state);
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use static_assertions::{assert_eq_align, assert_eq_size};
+
+    use super::*;
+
+    // Check that `Resource`s have the `usize` layout.
+    assert_eq_align!(Resource<()>, usize);
+    assert_eq_size!(Resource<()>, usize);
+    assert_eq_align!(ResourceCopy<()>, usize);
+    assert_eq_size!(ResourceCopy<()>, usize);
+    assert_eq_align!(Resource<u8>, usize);
+    assert_eq_size!(Resource<u8>, usize);
+    assert_eq_align!(ResourceCopy<u8>, usize);
+    assert_eq_size!(ResourceCopy<u8>, usize);
 }
