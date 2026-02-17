@@ -74,6 +74,7 @@ These errors shouldn't occur if WASM is compiled in the release mode.
 
 Using the `#[externref]` macro and `Resource`s in WASM-targeting code:
 
+<!-- ANCHOR: example -->
 ```rust
 use externref::{externref, Resource};
 
@@ -104,6 +105,7 @@ pub extern "C" fn test_export(arena: &Resource<Arena>) {
     // Do something with `bytes`...
 }
 ```
+<!-- ANCHOR_END: example -->
 
 See crate docs for more examples of usage and implementation details.
 
