@@ -220,6 +220,12 @@ struct Function {
 
 impl Function {
     fn new(function: &mut ItemFn, attrs: &ExternrefAttrs) -> syn::Result<Self> {
+        if attrs.stubs.is_some() {
+            let message =
+                "`stubs` can only be specified on extern modules, not on export functions";
+            return Err(syn::Error::new_spanned(&function.sig, message));
+        }
+
         let abi_name = function.sig.abi.as_ref().and_then(|abi| abi.name.as_ref());
         check_abi("exported function", abi_name, &function.sig)?;
 
