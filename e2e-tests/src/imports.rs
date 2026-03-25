@@ -2,7 +2,7 @@ use externref::{Resource, ResourceCopy};
 
 use crate::{Bytes, Sender};
 
-#[externref::externref]
+#[externref::externref(stubs)]
 #[link(wasm_import_module = "test")]
 unsafe extern "C" {
     pub(crate) fn send_message(
@@ -24,7 +24,7 @@ unsafe extern "C" {
 // ANCHOR: imports_copy
 type MessageCopy = ResourceCopy<Bytes>;
 
-#[externref::externref]
+#[externref::externref(stubs(target_arch = "wasm32"))]
 #[link(wasm_import_module = "test")]
 unsafe extern "C" {
     #[resource]

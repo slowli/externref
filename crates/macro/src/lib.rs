@@ -32,6 +32,7 @@ use crate::externref::{for_export, for_foreign_module};
 #[derive(Default)]
 struct ExternrefAttrs {
     crate_path: Option<Path>,
+    stubs: Option<proc_macro2::TokenStream>,
 }
 
 impl ExternrefAttrs {
@@ -50,8 +51,17 @@ impl ExternrefAttrs {
                     value.parse()?
                 });
                 Ok(())
+            } else if meta.path.is_ident("stubs") {
+                attrs.stubs = Some(if meta.input.peek(syn::token::Paren) {
+                    let content;
+                    syn::parenthesized!(content in meta.input);
+                    content.parse()?
+                } else {
+                    syn::parse_quote!(target_family = "wasm")
+                });
+                Ok(())
             } else {
-                Err(meta.error("unsupported attribute"))
+                Err(meta.error("unsupported attribute; expected `crate` or `stubs`"))
             }
         });
         parser.parse(tokens)?;
@@ -98,7 +108,7 @@ pub fn externref(attr: TokenStream, input: TokenStream) -> TokenStream {
     };
 
     let output = match syn::parse::<Item>(input) {
-        Ok(Item::ForeignMod(mut module)) => for_foreign_module(&mut module, &attrs),
+        Ok(Item::ForeignMod(mut module)) => for_foreign_module(&mut module, attrs),
         Ok(Item::Fn(mut function)) => for_export(&mut function, &attrs),
         Ok(other) => {
             return SynError::new_spanned(other, MSG)

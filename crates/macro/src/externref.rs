@@ -349,6 +349,22 @@ impl Function {
         }
     }
 
+    fn stub(vis: &Visibility, mut sig: Signature) -> TokenStream {
+        sig.unsafety = Some(syn::parse_quote!(unsafe));
+        for (i, arg) in sig.inputs.iter_mut().enumerate() {
+            if let FnArg::Typed(typed_arg) = arg {
+                let arg = Ident::new(&format!("__arg{i}"), typed_arg.pat.span());
+                *typed_arg.pat = syn::parse_quote!(#arg);
+            }
+        }
+
+        quote! {
+            #vis #sig {
+                ::core::unreachable!()
+            }
+        }
+    }
+
     fn wrap_import(&self, vis: &Visibility, mut sig: Signature) -> (TokenStream, Ident) {
         let cr = &self.crate_path;
         sig.unsafety = Some(syn::parse_quote!(unsafe));
@@ -483,14 +499,21 @@ pub(crate) fn for_export(function: &mut ItemFn, attrs: &ExternrefAttrs) -> Token
 struct Imports {
     module_name: String,
     functions: Vec<(Function, TokenStream)>,
+    fn_stubs: Vec<TokenStream>,
+    attrs: ExternrefAttrs,
 }
 
 impl Imports {
-    fn new(module: &mut ItemForeignMod, attrs: &ExternrefAttrs) -> syn::Result<Self> {
+    fn new(module: &mut ItemForeignMod, attrs: ExternrefAttrs) -> syn::Result<Self> {
         const NO_ATTR_MSG: &str = "#[link(wasm_import_module = \"..\")] must be specified \
             on the foreign module";
 
         check_abi("foreign module", module.abi.name.as_ref(), &module.abi)?;
+
+        if let Some(condition) = &attrs.stubs {
+            let conditional = syn::parse_quote!(#[cfg(#condition)]);
+            module.attrs.insert(0, conditional);
+        }
 
         let link_attr = module
             .attrs
@@ -529,13 +552,21 @@ impl Imports {
 
         let cr = attrs.crate_path();
         let mut functions = Vec::with_capacity(module.items.len());
+        let mut fn_stubs = Vec::with_capacity(if attrs.stubs.is_some() {
+            module.items.len()
+        } else {
+            0
+        });
         for item in &mut module.items {
             if let ForeignItem::Fn(fn_item) = item {
                 let link_name = attr_expr(&fn_item.attrs, "link_name")?;
                 let has_link_name = link_name.is_some();
                 let ret_resource_attr = take_resource_attr(&mut fn_item.attrs)?;
                 let function =
-                    Function::from_sig(&mut fn_item.sig, link_name, attrs, ret_resource_attr)?;
+                    Function::from_sig(&mut fn_item.sig, link_name, &attrs, ret_resource_attr)?;
+                if attrs.stubs.is_some() {
+                    fn_stubs.push(Function::stub(&fn_item.vis, fn_item.sig.clone()));
+                }
                 if !function.needs_declaring() {
                     continue;
                 }
@@ -568,6 +599,8 @@ impl Imports {
         Ok(Self {
             module_name,
             functions,
+            fn_stubs,
+            attrs,
         })
     }
 
@@ -579,15 +612,23 @@ impl Imports {
         quote!(#(#function_declarations)*)
     }
 
-    fn wrappers(&self) -> impl ToTokens {
+    fn wrappers(&self) -> TokenStream {
         let wrappers = self.functions.iter().map(|(_, wrapper)| wrapper);
-        quote!(#(#wrappers)*)
+        if let Some(condition) = &self.attrs.stubs {
+            let stubs = self.fn_stubs.iter();
+            quote! {
+                #(#[cfg(#condition)] #wrappers)*
+                #(#[cfg(not(#condition))] #stubs)*
+            }
+        } else {
+            quote!(#(#wrappers)*)
+        }
     }
 }
 
 pub(crate) fn for_foreign_module(
     module: &mut ItemForeignMod,
-    attrs: &ExternrefAttrs,
+    attrs: ExternrefAttrs,
 ) -> TokenStream {
     let parsed_module = match Imports::new(module, attrs) {
         Ok(module) => module,
@@ -728,7 +769,12 @@ mod tests {
         assert_eq!(ident, "__externref_send_message");
 
         let wrapper: ItemFn = syn::parse_quote!(#wrapper);
-        let expected: ItemFn = syn::parse_quote! {
+        let expected = expected_wrapper();
+        assert_eq!(wrapper, expected, "{}", quote!(#wrapper));
+    }
+
+    fn expected_wrapper() -> ItemFn {
+        syn::parse_quote! {
             #[inline(never)]
             unsafe fn send_message(
                 __arg0: &Resource<Sender>,
@@ -743,8 +789,31 @@ mod tests {
                 );
                 externref::Resource::new_non_null(__output)
             }
+        }
+    }
+
+    #[test]
+    fn stub_for_function() {
+        let sig: Signature = syn::parse_quote! {
+            fn send_message(
+                sender: &Resource<Sender>,
+                message_ptr: *const u8,
+                message_len: usize,
+            ) -> Resource<Bytes>
         };
-        assert_eq!(wrapper, expected, "{}", quote!(#wrapper));
+        let fn_stub = Function::stub(&Visibility::Inherited, sig);
+        let fn_stub: ItemFn = syn::parse_quote!(#fn_stub);
+
+        let expected: ItemFn = syn::parse_quote! {
+            unsafe fn send_message(
+                __arg0: &Resource<Sender>,
+                __arg1: *const u8,
+                __arg2: usize,
+            ) -> Resource<Bytes> {
+                ::core::unreachable!()
+            }
+        };
+        assert_eq!(fn_stub, expected, "{}", quote!(#fn_stub));
     }
 
     #[test]
@@ -759,7 +828,7 @@ mod tests {
                 ) -> Resource<Bytes>;
             }
         };
-        Imports::new(&mut foreign_mod, &ExternrefAttrs::default()).unwrap();
+        Imports::new(&mut foreign_mod, ExternrefAttrs::default()).unwrap();
 
         let expected: ItemForeignMod = syn::parse_quote! {
             #[link(wasm_import_module = "test")]
@@ -773,5 +842,44 @@ mod tests {
             }
         };
         assert_eq!(foreign_mod, expected, "{}", quote!(#foreign_mod));
+    }
+
+    #[test]
+    fn wrappers_with_stubs() {
+        let mut foreign_mod: ItemForeignMod = syn::parse_quote! {
+            #[link(wasm_import_module = "test")]
+            extern "C" {
+                fn send_message(
+                    sender: &Resource<Sender>,
+                    message_ptr: *const u8,
+                    message_len: usize,
+                ) -> Resource<Bytes>;
+            }
+        };
+        let attrs = ExternrefAttrs {
+            stubs: Some(syn::parse_quote!(target_family = "wasm")),
+            ..ExternrefAttrs::default()
+        };
+        let imports = Imports::new(&mut foreign_mod, attrs).unwrap();
+        let wrappers = imports.wrappers();
+        let wrappers: syn::ItemMod = syn::parse_quote!(mod wrappers { #wrappers });
+
+        let expected_wrapper = expected_wrapper();
+        let expected = syn::parse_quote! {
+            mod wrappers {
+                #[cfg(target_family = "wasm")]
+                #expected_wrapper
+
+                #[cfg(not(target_family = "wasm"))]
+                unsafe fn send_message(
+                    __arg0: &Resource<Sender>,
+                    __arg1: *const u8,
+                    __arg2: usize,
+                ) -> Resource<Bytes> {
+                    ::core::unreachable!()
+                }
+            }
+        };
+        assert_eq!(wrappers, expected, "{}", quote!(#wrappers));
     }
 }
