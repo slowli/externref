@@ -26,7 +26,7 @@ test-casing.workspace = true
 tracing.workspace = true
 tracing-capture.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-wasmtime.workspace = true
+wasmtime = { workspace = true, features = ["anyhow"] }
 
 [dev-dependencies.externref]
 path = "../crates/lib"
