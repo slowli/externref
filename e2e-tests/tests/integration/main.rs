@@ -2,7 +2,6 @@
 
 use std::{collections::HashSet, sync::Once};
 
-use anyhow::{Context, anyhow};
 use assert_matches::assert_matches;
 use once_cell::sync::Lazy;
 use test_casing::{Product, test_casing};
@@ -13,7 +12,7 @@ use tracing_subscriber::{
 };
 use wasmtime::{
     AsContextMut, Caller, Engine, Extern, ExternRef, Instance, Linker, Module, OwnedRooted, Ref,
-    Rooted, Store, Table,
+    Rooted, Store, Table, error::Context as _,
 };
 
 use crate::compile::{CompilationProfile, CompiledModule};
@@ -110,11 +109,11 @@ fn send_message(
     resource: Option<Rooted<ExternRef>>,
     buffer_ptr: u32,
     buffer_len: u32,
-) -> anyhow::Result<Option<Rooted<ExternRef>>> {
+) -> wasmtime::Result<Option<Rooted<ExternRef>>> {
     let memory = ctx
         .get_export("memory")
         .and_then(Extern::into_memory)
-        .ok_or_else(|| anyhow!("module memory is not exposed"))?;
+        .ok_or_else(|| wasmtime::format_err!("module memory is not exposed"))?;
 
     let mut buffer = vec![0_u8; buffer_len as usize];
     memory
@@ -127,14 +126,17 @@ fn send_message(
         .data(&ctx)?
         .context("null reference")?
         .downcast_ref::<HostSender>()
-        .ok_or_else(|| anyhow!("passed reference has incorrect type"))?;
+        .ok_or_else(|| wasmtime::format_err!("passed reference has incorrect type"))?;
     assert!(ctx.data().senders.contains(&sender.key));
 
     let bytes = Box::<str>::from(buffer);
     ExternRef::new(&mut ctx, bytes).map(Some)
 }
 
-fn message_len(ctx: Caller<'_, Data>, resource: Option<Rooted<ExternRef>>) -> anyhow::Result<u32> {
+fn message_len(
+    ctx: Caller<'_, Data>,
+    resource: Option<Rooted<ExternRef>>,
+) -> wasmtime::Result<u32> {
     let Some(resource) = resource else {
         return Ok(0);
     };
@@ -279,7 +281,7 @@ fn transform_module(profile: CompilationProfile, test_export: &str) {
         .data()
         .assert_drops(&store, &["test", "some other string", "42"].into());
 
-    store.gc(None);
+    store.gc(None).unwrap();
     let size = externrefs.size(&store);
     assert_eq!(size, 4); // sender + 3 buffers
     for i in 0..size {

@@ -32,6 +32,7 @@ use crate::externref::{for_export, for_foreign_module};
 #[derive(Default)]
 struct ExternrefAttrs {
     crate_path: Option<Path>,
+    stubs: Option<proc_macro2::TokenStream>,
 }
 
 impl ExternrefAttrs {
@@ -50,8 +51,17 @@ impl ExternrefAttrs {
                     value.parse()?
                 });
                 Ok(())
+            } else if meta.path.is_ident("stubs") {
+                attrs.stubs = Some(if meta.input.peek(syn::token::Paren) {
+                    let content;
+                    syn::parenthesized!(content in meta.input);
+                    content.parse()?
+                } else {
+                    syn::parse_quote!(target_family = "wasm")
+                });
+                Ok(())
             } else {
-                Err(meta.error("unsupported attribute"))
+                Err(meta.error("unsupported attribute; expected `crate` or `stubs`"))
             }
         });
         parser.parse(tokens)?;
@@ -87,6 +97,29 @@ impl ExternrefAttrs {
 ///
 /// - `#[resource]`, `#[resource = true]` or `#[resource(true)]` mark an arg / return type as a resource.
 /// - `#[resource = false]` or `#[resource(false)]` mark an arg / return type as a non-resource.
+///
+/// # Attributes
+///
+/// The `externref` macro supports attributes specified in parentheses after the macro
+/// (e.g., `#[externref(crate = path::to::externref)]`).
+///
+/// ## `crate`
+///
+/// **Type:** path or string
+///
+/// Allows specifying a path to the `externref` crate, e.g. to re-export it from a higher-level library.
+/// A path can be either a string (`"path::to::externref"`), or an unquoted path (`path::to::externref`).
+///
+/// ## `stubs`
+///
+/// **Type:** compilation condition, e.g. `target_family = "wasm"`.
+///
+/// Generates stub import functions for non-WASM targets with `unreachable!()` contents. This is useful
+/// if the library needs to be compiled (but not run) on non-WASM targets. By default, the compilation
+/// condition determining WASM targets is `target_family = "wasm"`; it can be changed by specifying
+/// the condition in parentheses, like `stubs(target_arch = "wasm32")`.
+///
+/// This attribute is only supported on `extern` modules and will lead to an error if specified on an export.
 #[proc_macro_attribute]
 pub fn externref(attr: TokenStream, input: TokenStream) -> TokenStream {
     const MSG: &str = "Unsupported item; only `extern \"C\" {}` modules and `extern \"C\" fn ...` \
@@ -98,7 +131,7 @@ pub fn externref(attr: TokenStream, input: TokenStream) -> TokenStream {
     };
 
     let output = match syn::parse::<Item>(input) {
-        Ok(Item::ForeignMod(mut module)) => for_foreign_module(&mut module, &attrs),
+        Ok(Item::ForeignMod(mut module)) => for_foreign_module(&mut module, attrs),
         Ok(Item::Fn(mut function)) => for_export(&mut function, &attrs),
         Ok(other) => {
             return SynError::new_spanned(other, MSG)

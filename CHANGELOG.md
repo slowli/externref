@@ -13,6 +13,7 @@ The project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html)
 - **macro:** Allow marking arguments and return types of transformed functions as resources / not resources
   via the `#[resource]` attribute. (To signal that an argument or return type is not a resource, one may use
   `#[resource = false]` or `#[resource(false)]`.)
+- Support stubbing for non-WASM targets via `#[externref(stubs)]` attribute.
 
 ### Changed
 

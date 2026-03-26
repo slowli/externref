@@ -1,0 +1,5 @@
+error: `stubs` can only be specified on extern modules, not on export functions
+ --> tests/ui/export_with_stubs.rs:4:5
+  |
+4 | pub extern "C" fn bogus() {
+  |     ^^^^^^^^^^^^^^^^^^^^^
