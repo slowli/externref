@@ -37,7 +37,7 @@ trybuild = "1.0.116"
 version-sync = "0.9.4"
 walrus = "0.24.3"
 wasmtime = "43.0.0"
-wat = "1.245.1"
+wat = "1.246.1"
 
 # Internal dependencies
 externref-macro = { version = "=0.3.0-beta.1", path = "crates/macro" }
