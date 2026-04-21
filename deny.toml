@@ -6,7 +6,9 @@ feature-depth = 1
 [advisories]
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "deny"
-ignore = []
+ignore = [
+  "RUSTSEC-2017-0008", # `serial` crate is unmaintained; used by `portable-pty` via `term-transcript`
+]
 
 [licenses]
 allow = [
@@ -24,10 +26,9 @@ multiple-versions = "deny"
 wildcards = "deny"
 allow-wildcard-paths = true
 skip-tree = [
-  # Relied upon by `walrus`
-  { name = "indexmap", version = "^1" },
   # Relied upon by `wasmtime` crates
   { name = "hashbrown", version = "^0.15" },
+  { name = "hashbrown", version = "^0.16" },
   # Relied upon by `clap`
   { name = "windows-sys", version = "^0.60" },
 ]
