@@ -19,7 +19,6 @@ dlmalloc = { workspace = true, features = ["global"] }
 [dev-dependencies]
 anyhow.workspace = true
 assert_matches.workspace = true
-once_cell.workspace = true
 predicates.workspace = true
 tempfile.workspace = true
 test-casing.workspace = true
