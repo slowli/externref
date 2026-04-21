@@ -64,7 +64,7 @@ impl PatchedFunctions {
         tracing::instrument(level = "debug", name = "patch_imports", skip_all)
     )]
     pub fn new(module: &mut Module, imports: &ExternrefImports, processor: &Processor<'_>) -> Self {
-        let table_id = module.tables.add_local(false, 0, None, RefType::Externref);
+        let table_id = module.tables.add_local(false, 0, None, RefType::EXTERNREF);
         if let Some(table_name) = processor.table_name {
             module.exports.add(table_name, table_id);
         }
@@ -247,7 +247,7 @@ impl PatchedFunctions {
             .if_else(
                 EXTERNREF,
                 |null_requested| {
-                    null_requested.ref_null(RefType::Externref);
+                    null_requested.ref_null(RefType::EXTERNREF);
                 },
                 |elem_requested| {
                     elem_requested.local_get(idx).table_get(table_id);
@@ -273,7 +273,7 @@ impl PatchedFunctions {
         }
         instr_builder
             .local_get(idx)
-            .ref_null(RefType::Externref)
+            .ref_null(RefType::EXTERNREF)
             .table_set(table_id);
         builder.finish(vec![idx], &mut module.funcs)
     }

@@ -5,7 +5,7 @@ use std::path::Path;
 use externref::{BitSlice, Function, FunctionKind, processor::Processor};
 use walrus::{ExportItem, ImportKind, Module, RawCustomSection, RefType, ValType};
 
-const EXTERNREF: ValType = ValType::Ref(RefType::Externref);
+const EXTERNREF: ValType = ValType::Ref(RefType::EXTERNREF);
 
 const ARENA_ALLOC: Function<'static> = Function {
     kind: FunctionKind::Import("arena"),
