@@ -1,9 +1,11 @@
 //! End-to-end tests for the `externref` macro / processor.
 
-use std::{collections::HashSet, sync::Once};
+use std::{
+    collections::HashSet,
+    sync::{LazyLock, Once},
+};
 
 use assert_matches::assert_matches;
-use once_cell::sync::Lazy;
 use test_casing::{Product, test_casing};
 use tracing::{Level, Subscriber, subscriber::DefaultGuard};
 use tracing_capture::{CaptureLayer, SharedStorage, Storage};
@@ -22,13 +24,14 @@ mod compile;
 type RefAssertion = fn(Caller<'_, Data>, &Table);
 
 fn compile_module(profile: CompilationProfile) -> &'static CompiledModule {
-    static UNOPTIMIZED_MODULE: Lazy<CompiledModule> =
-        Lazy::new(|| CompilationProfile::Wasm.compile());
-    static OPTIMIZED_MODULE: Lazy<CompiledModule> =
-        Lazy::new(|| CompilationProfile::OptimizedWasm.compile());
-    static DEBUG_MODULE: Lazy<CompiledModule> = Lazy::new(|| CompilationProfile::Debug.compile());
-    static RELEASE_MODULE: Lazy<CompiledModule> =
-        Lazy::new(|| CompilationProfile::Release.compile());
+    static UNOPTIMIZED_MODULE: LazyLock<CompiledModule> =
+        LazyLock::new(|| CompilationProfile::Wasm.compile());
+    static OPTIMIZED_MODULE: LazyLock<CompiledModule> =
+        LazyLock::new(|| CompilationProfile::OptimizedWasm.compile());
+    static DEBUG_MODULE: LazyLock<CompiledModule> =
+        LazyLock::new(|| CompilationProfile::Debug.compile());
+    static RELEASE_MODULE: LazyLock<CompiledModule> =
+        LazyLock::new(|| CompilationProfile::Release.compile());
 
     match profile {
         CompilationProfile::Wasm => &UNOPTIMIZED_MODULE,

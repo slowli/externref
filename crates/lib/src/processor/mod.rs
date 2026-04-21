@@ -57,7 +57,7 @@ mod functions;
 mod state;
 
 /// Externref type as a constant.
-const EXTERNREF: ValType = ValType::Ref(RefType::Externref);
+const EXTERNREF: ValType = ValType::Ref(RefType::EXTERNREF);
 
 /// WASM module processor encapsulating processing options.
 #[derive(Debug)]
