@@ -4,17 +4,18 @@
 
 use term_transcript::{
     ExitStatus, PtyCommand, ShellOptions,
-    svg::{Template, TemplateOptions},
+    svg::{self, Template, TemplateOptions},
     test::TestConfig,
 };
 #[cfg(feature = "tracing")]
 use test_casing::{decorate, decorators::Retry};
 
 fn template() -> Template {
-    Template::new(TemplateOptions {
-        window_frame: true,
+    let options = TemplateOptions {
+        window: Some(svg::WindowOptions::default()),
         ..TemplateOptions::default()
-    })
+    };
+    Template::new(options.validated().unwrap())
 }
 
 fn test_config() -> TestConfig<PtyCommand> {
