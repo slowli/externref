@@ -3,7 +3,7 @@ members = ["crates/cli", "crates/lib", "crates/macro", "e2e-tests"]
 resolver = "3"
 
 [workspace.package]
-version = "0.3.0-beta.1"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.85"
 authors = [
@@ -39,8 +39,8 @@ wasmtime = "46.0.1"
 wat = "1.253.0"
 
 # Internal dependencies
-externref-macro = { version = "=0.3.0-beta.1", path = "crates/macro" }
-externref = { version = "=0.3.0-beta.1", path = "crates/lib", default-features = false }
+externref-macro = { version = "=0.3.0", path = "crates/macro" }
+externref = { version = "=0.3.0", path = "crates/lib", default-features = false }
 # ^ We require an exact version in order to simplify crate evolution (e.g., to not worry
 # that future internal changes in macro implementations will break previous versions
 # of the `externref` crate).

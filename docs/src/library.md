@@ -4,7 +4,7 @@ Add this to your `Crate.toml`:
 
 ```toml
 [dependencies]
-externref = "0.3.0-beta.1"
+externref = "0.3.0"
 ```
 
 See [the library docs](crates/externref) for detailed description of its API.

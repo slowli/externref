@@ -632,7 +632,7 @@ dependencies = [
 
 [[package]]
 name = "externref"
-version = "0.3.0-beta.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -647,7 +647,7 @@ dependencies = [
 
 [[package]]
 name = "externref-cli"
-version = "0.3.0-beta.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -659,7 +659,7 @@ dependencies = [
 
 [[package]]
 name = "externref-macro"
-version = "0.3.0-beta.1"
+version = "0.3.0"
 dependencies = [
  "proc-macro2",
  "quote",
