@@ -5,6 +5,10 @@ The project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## 0.3.0 - 2026-07-19
+
+*(All changes are relative compared to [the 0.3.0-beta.1 release](#030-beta1---2024-09-29))*
+
 ### Added
 
 - Implement `PartialEq`, `Eq` and `Hash` traits for `Resource`s based on (externref) pointer comparison.
