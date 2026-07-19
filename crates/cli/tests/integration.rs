@@ -18,12 +18,12 @@ fn template() -> Template {
     Template::new(options.validated().unwrap())
 }
 
-fn test_config() -> TestConfig<PtyCommand> {
+fn test_config() -> TestConfig<ShellOptions<PtyCommand>> {
     let shell_options = ShellOptions::new(PtyCommand::default())
-        .with_cargo_path()
+        .with_cargo_path_for("externref")
         .with_current_dir(env!("CARGO_MANIFEST_DIR"))
         .with_status_check("echo $?", |output| {
-            let response = output.to_plaintext().ok()?;
+            let response = output.text();
             response.trim().parse().ok().map(ExitStatus)
         });
     TestConfig::new(shell_options).with_template(template())
