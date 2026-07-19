@@ -9,8 +9,12 @@ error[E0539]: malformed `link_name` attribute input
    |
 13 |     #[link_name = 3]
    |     ^^^^^^^^^^^^^^-^
-   |     |             |
-   |     |             expected a string literal here
-   |     help: must be of the form: `#[link_name = "name"]`
+   |                   |
+   |                   expected a string literal here
    |
    = note: for more information, visit <https://doc.rust-lang.org/reference/items/external-blocks.html#the-link_name-attribute>
+help: must be of the form
+   |
+13 -     #[link_name = 3]
+13 +     #[link_name = "name"]
+   |

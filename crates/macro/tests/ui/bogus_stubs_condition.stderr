@@ -3,12 +3,16 @@ error[E0539]: malformed `cfg` attribute input
   |
 3 | #[externref(stubs("what"))]
   | ^^^^^^^^^^^^^^^^^^------^^^
-  | |                 |
-  | |                 expected a valid identifier here
-  | help: must be of the form: `cfg(predicate)`
+  |                   |
+  |                   expected a valid identifier here
   |
   = note: for more information, visit <https://doc.rust-lang.org/reference/conditional-compilation.html#the-cfg-attribute>
   = note: this error originates in the attribute macro `externref` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: must be of the form
+  |
+3 - #[externref(stubs("what"))]
+3 + cfg(predicate)
+  |
 
 error[E0428]: the name `unused` is defined multiple times
  --> tests/ui/bogus_stubs_condition.rs:6:5
