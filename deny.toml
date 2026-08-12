@@ -28,6 +28,8 @@ allow-wildcard-paths = true
 skip-tree = [
   # Relied upon by `wasmtime` crates
   { name = "hashbrown", version = "^0.16" },
+  # proc-macro dependency
+  { name = "syn", version = "^2" },
 ]
 
 [sources]
