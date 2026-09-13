@@ -98,6 +98,22 @@ impl ExternrefAttrs {
 /// - `#[resource]`, `#[resource = true]` or `#[resource(true)]` mark an arg / return type as a resource.
 /// - `#[resource = false]` or `#[resource(false)]` mark an arg / return type as a non-resource.
 ///
+/// # Nullability
+///
+/// Nullability is determined by the Rust type for both arguments and results:
+///
+/// - `Resource<T>`, `&Resource<T>` and `&mut Resource<T>` become `(ref extern)`.
+/// - Their `Option<_>` forms become nullable `externref` (`(ref null extern)`).
+/// - `ResourceCopy` and resource aliases marked with `#[resource]` follow the same rules.
+///   The `Option` wrapper must appear explicitly in the signature.
+///
+/// No nullability attribute is required. For example, declare the `cast` import from
+/// `wasm:js-string` as `fn cast(value: Option<&Resource<()>>) -> Resource<()>` to obtain
+/// `(externref) -> (ref extern)`. Pass a non-null resource using `Some(&resource)`.
+///
+/// Non-null metadata requires an updated `externref` processor or CLI. If optimizing the
+/// processed module with Binaryen, pass `--enable-gc` to preserve non-null reference types.
+///
 /// # Attributes
 ///
 /// The `externref` macro supports attributes specified in parentheses after the macro

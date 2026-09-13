@@ -38,6 +38,10 @@
 //! 2. Add the `#[externref]` proc macro on the imported / exported functions.
 //! 3. Post-process the generated WASM module with the [`processor`].
 //!
+//! `Resource<T>`, `&Resource<T>` and `&mut Resource<T>` use non-null `(ref extern)`
+//! in WASM signatures. Their `Option<_>` forms use nullable `externref`
+//! (`(ref null extern)`). The same rules apply to [`ResourceCopy`].
+//!
 //! `Resource`s support primitive downcasting and upcasting with `Resource<()>` signalling
 //! a generic resource. Downcasting is *unchecked*; it is up to the `Resource` users to
 //! define a way to check the resource kind dynamically if necessary. One possible approach
@@ -50,8 +54,8 @@
 //! for imported and exported functions. All `Resource` args or return types are replaced
 //! with `usize`s and a wrapper function is added that performs the necessary transform
 //! from / to `usize`.
-//! Additionally, a function signature describing where `Resource` args are located
-//! is recorded in a WASM custom section.
+//! Additionally, function signature metadata records where resources are located
+//! and which arguments or results are non-null.
 //!
 //! To handle `usize` (~`i32` in WASM) <-> `externref` conversions, managing resources is performed
 //! using 3 function imports from a surrogate module:
@@ -130,7 +134,7 @@
 //! #[externref]
 //! #[link(wasm_import_module = "test")]
 //! unsafe extern "C" {
-//!     // This import will have signature `(externref, i32, i32) -> externref`
+//!     // This import will have signature `((ref extern), i32, i32) -> (ref extern)`
 //!     // on host.
 //!     fn send_message(
 //!         sender: &Resource<Sender>,
@@ -145,7 +149,7 @@
 //!     fn last_sender() -> Option<Resource<Sender>>;
 //! }
 //!
-//! // This export will have signature `(externref)` on host.
+//! // This export will have signature `((ref extern)) -> ()` on host.
 //! #[externref]
 //! #[unsafe(export_name = "test_export")]
 //! pub extern "C" fn test_export(sender: Resource<Sender>) {
