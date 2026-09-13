@@ -2,7 +2,11 @@
 
 use std::path::Path;
 
-use externref::{BitSlice, Function, FunctionKind, processor::Processor};
+use assert_matches::assert_matches;
+use externref::{
+    BitSlice, Function, FunctionKind,
+    processor::{Error, Processor},
+};
 use walrus::{ExportItem, ImportKind, Module, RawCustomSection, RefType, ValType};
 
 const EXTERNREF: ValType = ValType::Ref(RefType::EXTERNREF);
@@ -87,6 +91,121 @@ fn basic_module() {
     // Check that the module is well-formed by converting it to bytes and back.
     let module_bytes = module.emit_wasm();
     Module::from_buffer(&module_bytes).unwrap();
+}
+
+#[test]
+fn non_null_import_result() {
+    const NON_NULL_RESULT: Function<'static> = Function {
+        kind: FunctionKind::Import("arena"),
+        name: "alloc",
+        externrefs: BitSlice::builder::<1>(3).with_set_bit(2).build(),
+    };
+    const NON_NULL_BYTES: [u8; NON_NULL_RESULT.custom_section_len()] =
+        NON_NULL_RESULT.custom_section();
+
+    let module = wat::parse_file(simple_module_path()).unwrap();
+    let mut module = Module::from_buffer(&module).unwrap();
+    add_basic_custom_section(&mut module);
+    module.customs.add(RawCustomSection {
+        name: Function::NON_NULL_CUSTOM_SECTION_NAME.to_owned(),
+        data: NON_NULL_BYTES.to_vec(),
+    });
+
+    Processor::default().process(&mut module).unwrap();
+
+    let import_id = module.imports.find("arena", "alloc").unwrap();
+    let ImportKind::Function(function_id) = module.imports.get(import_id).kind else {
+        panic!("expected a function import");
+    };
+    let function_type = module.types.get(module.funcs.get(function_id).ty());
+    assert_eq!(function_type.params(), [EXTERNREF, ValType::I32]);
+    assert_eq!(
+        function_type.results(),
+        [ValType::Ref(RefType {
+            nullable: false,
+            ..RefType::EXTERNREF
+        })]
+    );
+    assert!(
+        module
+            .customs
+            .remove_raw(Function::CUSTOM_SECTION_NAME)
+            .is_none()
+    );
+    assert!(
+        module
+            .customs
+            .remove_raw(Function::NON_NULL_CUSTOM_SECTION_NAME)
+            .is_none()
+    );
+
+    let module_bytes = module.emit_wasm();
+    Module::from_buffer(&module_bytes).unwrap();
+}
+
+#[test]
+fn non_null_metadata_requires_primary_section() {
+    let mut module = Module::default();
+    module.customs.add(RawCustomSection {
+        name: Function::NON_NULL_CUSTOM_SECTION_NAME.to_owned(),
+        data: vec![],
+    });
+
+    assert_matches!(
+        Processor::default().process(&mut module),
+        Err(Error::MissingExternrefSection)
+    );
+}
+
+#[test]
+fn non_null_metadata_rejects_non_resource_args() {
+    const INVALID: Function<'static> = Function {
+        kind: FunctionKind::Import("arena"),
+        name: "alloc",
+        externrefs: BitSlice::builder::<1>(3).with_set_bit(1).build(),
+    };
+    const BYTES: [u8; INVALID.custom_section_len()] = INVALID.custom_section();
+
+    let module = wat::parse_file(simple_module_path()).unwrap();
+    let mut module = Module::from_buffer(&module).unwrap();
+    add_basic_custom_section(&mut module);
+    module.customs.add(RawCustomSection {
+        name: Function::NON_NULL_CUSTOM_SECTION_NAME.to_owned(),
+        data: BYTES.to_vec(),
+    });
+
+    assert_matches!(
+        Processor::default().process(&mut module),
+        Err(Error::InvalidNonNullSignature { module: Some(module), name })
+            if module == "arena" && name == "alloc"
+    );
+}
+
+#[test]
+fn non_null_metadata_rejects_wrong_arity() {
+    const INVALID: Function<'static> = Function {
+        kind: FunctionKind::Import("arena"),
+        name: "alloc",
+        externrefs: BitSlice::builder::<1>(2).with_set_bit(0).build(),
+    };
+    const BYTES: [u8; INVALID.custom_section_len()] = INVALID.custom_section();
+
+    let module = wat::parse_file(simple_module_path()).unwrap();
+    let mut module = Module::from_buffer(&module).unwrap();
+    add_basic_custom_section(&mut module);
+    module.customs.add(RawCustomSection {
+        name: Function::NON_NULL_CUSTOM_SECTION_NAME.to_owned(),
+        data: BYTES.to_vec(),
+    });
+
+    assert_matches!(
+        Processor::default().process(&mut module),
+        Err(Error::UnexpectedArity {
+            expected_arity: 2,
+            real_arity: 3,
+            ..
+        })
+    );
 }
 
 #[test]

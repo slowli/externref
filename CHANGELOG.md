@@ -5,6 +5,21 @@ The project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+- Support non-null WASM reference types (`(ref extern)`) on imported and exported
+  function arguments and results, including JS string builtins.
+
+### Changed
+
+- **Breaking:** Derive WASM nullability from Rust types. `Resource`, `ResourceCopy` and
+  their references now use `(ref extern)`; `Option` forms use `(ref null extern)`.
+
+### Fixed
+
+- Handle optional mutable resource references in generated import wrappers.
+- Recognize debug import guards after argument spills in the stack prologue.
+
 ## 0.3.0 - 2026-07-19
 
 *(All changes are relative compared to [the 0.3.0-beta.1 release](#030-beta1---2024-09-29))*

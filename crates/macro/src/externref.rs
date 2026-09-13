@@ -117,13 +117,13 @@ impl SimpleResourceKind {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ResourceKind {
-    Simple(SimpleResourceKind),
+    NonNull(SimpleResourceKind),
     Option(SimpleResourceKind),
 }
 
 impl From<SimpleResourceKind> for ResourceKind {
     fn from(simple: SimpleResourceKind) -> Self {
-        Self::Simple(simple)
+        Self::NonNull(simple)
     }
 }
 
@@ -163,8 +163,12 @@ impl ResourceKind {
 
     fn simple_kind(self) -> SimpleResourceKind {
         match self {
-            Self::Simple(simple) | Self::Option(simple) => simple,
+            Self::NonNull(simple) | Self::Option(simple) => simple,
         }
+    }
+
+    fn is_non_null(self) -> bool {
+        !matches!(self, Self::Option(_))
     }
 
     fn initialize_for_export(self, arg: &Ident, cr: &Path) -> TokenStream {
@@ -177,7 +181,7 @@ impl ResourceKind {
                 };
                 quote!(#cr::Resource::new(#arg) #method_call)
             }
-            Self::Simple(_) => {
+            Self::NonNull(_) => {
                 let ref_token = match self.simple_kind() {
                     SimpleResourceKind::Owned => None,
                     SimpleResourceKind::Ref => Some(quote!(&)),
@@ -190,7 +194,8 @@ impl ResourceKind {
 
     fn prepare_for_import(self, arg: &Ident, cr: &Path) -> TokenStream {
         let arg = match self {
-            Self::Simple(_) => quote!(core::option::Option::Some(#arg)),
+            Self::NonNull(_) => quote!(core::option::Option::Some(#arg)),
+            Self::Option(SimpleResourceKind::MutRef) => quote!(#arg.as_deref()),
             Self::Option(_) => quote!(#arg),
         };
 
@@ -292,14 +297,20 @@ impl Function {
         } else {
             quote!(#cr::FunctionKind::Export)
         };
-        let externrefs = self.create_externrefs();
+        let externrefs = self.create_externrefs(false);
+        let has_non_null = self.resource_args.values().any(|kind| kind.is_non_null())
+            || matches!(self.return_type, ReturnType::Resource(kind) if kind.is_non_null());
+        let non_null = has_non_null.then(|| {
+            let non_null = self.create_externrefs(true);
+            quote!(, non_null = #non_null)
+        });
 
         quote! {
             #cr::declare_function!(#cr::Function {
                 kind: #kind,
                 name: #name,
                 externrefs: #externrefs,
-            });
+            } #non_null);
         }
     }
 
@@ -415,7 +426,7 @@ impl Function {
         (wrapper, new_ident)
     }
 
-    fn create_externrefs(&self) -> impl ToTokens {
+    fn create_externrefs(&self, non_null: bool) -> impl ToTokens {
         let cr = &self.crate_path;
         let args_and_return_type_count = if matches!(self.return_type, ReturnType::Default) {
             self.arg_count
@@ -424,13 +435,20 @@ impl Function {
         };
         let bytes = args_and_return_type_count.div_ceil(8);
 
-        let maybe_ret_idx = if matches!(self.return_type, ReturnType::Resource(_)) {
+        let has_ref_return = match self.return_type {
+            ReturnType::Resource(kind) => !non_null || kind.is_non_null(),
+            _ => false,
+        };
+        let maybe_ret_idx = if has_ref_return {
             Some(self.arg_count)
         } else {
             None
         };
 
-        let set_bits = self.resource_args.keys().copied();
+        let set_bits = self
+            .resource_args
+            .iter()
+            .filter_map(|(&idx, kind)| (!non_null || kind.is_non_null()).then_some(idx));
         #[cfg(test)] // sort keys in deterministic order for testing
         let set_bits = {
             let mut sorted: Vec<_> = set_bits.collect();
@@ -654,6 +672,121 @@ mod tests {
     use super::*;
 
     #[test]
+    fn declaring_non_null_signature() {
+        let mut export_fn: ItemFn = syn::parse_quote! {
+            pub extern "C" fn test_export(
+                sender: &mut Resource<Sender>,
+                buffer: Option<Resource<Buffer>>,
+                some_ptr: *const u8,
+            ) -> ResourceCopy<Sender> {
+                loop {}
+            }
+        };
+        let parsed = Function::new(&mut export_fn, &ExternrefAttrs::default()).unwrap();
+        let declaration = parsed.declare(None);
+        let declaration: syn::Item = syn::parse_quote!(#declaration);
+        let expected: syn::Item = syn::parse_quote! {
+            externref::declare_function!(externref::Function {
+                kind: externref::FunctionKind::Export,
+                name: "test_export",
+                externrefs: externref::BitSlice::builder::<1usize>(4usize)
+                    .with_set_bit(0usize)
+                    .with_set_bit(1usize)
+                    .with_set_bit(3usize)
+                    .build(),
+            }, non_null = externref::BitSlice::builder::<1usize>(4usize)
+                .with_set_bit(0usize)
+                .with_set_bit(3usize)
+                .build());
+        };
+        assert_eq!(declaration, expected, "{}", quote!(#declaration));
+    }
+
+    #[test]
+    fn non_null_resource_kinds() {
+        let cases: [(Type, SimpleResourceKind); 5] = [
+            (syn::parse_quote!(Resource<()>), SimpleResourceKind::Owned),
+            (syn::parse_quote!(&Resource<()>), SimpleResourceKind::Ref),
+            (
+                syn::parse_quote!(&mut Resource<()>),
+                SimpleResourceKind::MutRef,
+            ),
+            (
+                syn::parse_quote!(ResourceCopy<()>),
+                SimpleResourceKind::Owned,
+            ),
+            (syn::parse_quote!(Handle), SimpleResourceKind::Owned),
+        ];
+        for (ty, expected) in cases {
+            let kind = ResourceKind::from_type(&ty, Some(true)).unwrap();
+            assert_eq!(kind, Some(ResourceKind::NonNull(expected)));
+        }
+    }
+
+    #[test]
+    fn optional_resource_kinds() {
+        let cases: [(Type, SimpleResourceKind); 4] = [
+            (
+                syn::parse_quote!(Option<Resource<()>>),
+                SimpleResourceKind::Owned,
+            ),
+            (
+                syn::parse_quote!(Option<&Resource<()>>),
+                SimpleResourceKind::Ref,
+            ),
+            (
+                syn::parse_quote!(Option<&mut Resource<()>>),
+                SimpleResourceKind::MutRef,
+            ),
+            (syn::parse_quote!(Option<Handle>), SimpleResourceKind::Owned),
+        ];
+        for (ty, expected) in cases {
+            let kind = ResourceKind::from_type(&ty, Some(true)).unwrap();
+            assert_eq!(kind, Some(ResourceKind::Option(expected)));
+        }
+    }
+
+    #[test]
+    fn resource_nullability_follows_rust_types() {
+        let types: [Type; 6] = [
+            syn::parse_quote!(Resource<()>),
+            syn::parse_quote!(&Resource<()>),
+            syn::parse_quote!(&mut Resource<()>),
+            syn::parse_quote!(ResourceCopy<()>),
+            syn::parse_quote!(&ResourceCopy<()>),
+            syn::parse_quote!(&mut ResourceCopy<()>),
+        ];
+        for resource_type in types {
+            for optional in [false, true] {
+                let rust_type: Type = if optional {
+                    syn::parse_quote!(Option<#resource_type>)
+                } else {
+                    resource_type.clone()
+                };
+                let mut signature: Signature = syn::parse_quote! {
+                    fn round_trip(value: #rust_type) -> #rust_type
+                };
+                let parsed =
+                    Function::from_sig(&mut signature, None, &ExternrefAttrs::default(), None)
+                        .unwrap();
+                let metadata = parsed.create_externrefs(true);
+                let metadata: Expr = syn::parse_quote!(#metadata);
+                let expected: Expr = if optional {
+                    syn::parse_quote!(externref::BitSlice::builder::<1usize>(2usize).build())
+                } else {
+                    syn::parse_quote! {
+                        externref::BitSlice::builder::<1usize>(2usize)
+                            .with_set_bit(0usize)
+                            .with_set_bit(1usize)
+                            .build()
+                    }
+                };
+                assert_eq!(metadata, expected, "{}", quote!(#signature));
+            }
+        }
+    }
+
+    #[test]
     fn declaring_signature_for_export() {
         let mut export_fn: ItemFn = syn::parse_quote! {
             pub extern "C" fn test_export(
@@ -677,7 +810,10 @@ mod tests {
                     .with_set_bit(0usize)
                     .with_set_bit(1usize)
                     .build(),
-            });
+            }, non_null = externref::BitSlice::builder::<1usize>(3usize)
+                .with_set_bit(0usize)
+                .with_set_bit(1usize)
+                .build());
         };
         assert_eq!(declaration, expected, "{}", quote!(#declaration));
     }

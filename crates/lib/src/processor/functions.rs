@@ -374,11 +374,11 @@ impl ir::VisitorMut for GuardRemover {
     fn start_instr_seq_mut(&mut self, instr_seq: &mut ir::InstrSeq) {
         let is_entry_seq = instr_seq.id() == self.entry_seq_id;
         let mut idx = 0;
-        let mut maybe_set_stack_ptr = false;
+        let mut in_stack_prologue = false;
         instr_seq.instrs.retain(|(instr, location)| {
             let placement = if let ir::Instr::Call(call) = instr {
                 if call.func == self.guard_id {
-                    Some(if is_entry_seq && (idx == 0 || maybe_set_stack_ptr) {
+                    Some(if is_entry_seq && (idx == 0 || in_stack_prologue) {
                         GuardPlacement::Correct
                     } else {
                         GuardPlacement::Incorrect(get_offset(*location))
@@ -394,7 +394,16 @@ impl ir::VisitorMut for GuardRemover {
                 self.add_placement(placement);
             }
             idx += 1;
-            maybe_set_stack_ptr = matches!(instr, ir::Instr::GlobalSet(_));
+            in_stack_prologue = matches!(instr, ir::Instr::GlobalSet(_))
+                || (in_stack_prologue
+                    && matches!(
+                        instr,
+                        ir::Instr::LocalGet(_)
+                            | ir::Instr::LocalSet(_)
+                            | ir::Instr::LocalTee(_)
+                            | ir::Instr::Load(_)
+                            | ir::Instr::Store(_)
+                    ));
             placement.is_none()
         });
     }
@@ -510,6 +519,68 @@ mod tests {
         let fns = PatchedFunctions::new(&mut module, &imports, &Processor::default());
         let (_, guarded_fns) = fns.replace_calls(&mut module).unwrap();
         assert_eq!(guarded_fns.len(), 1);
+    }
+
+    #[test]
+    fn guarded_function_spilling_args_to_stack() {
+        const MODULE_BYTES: &[u8] = br#"
+            (module
+                (import "externref" "guard" (func $guard))
+                (global $__stack_pointer (mut i32) (i32.const 32768))
+                (memory 1)
+
+                (func (param $resource i32)
+                    (local $frame i32)
+                    (global.set $__stack_pointer
+                        (local.tee $frame
+                            (i32.sub (global.get $__stack_pointer) (i32.const 32))
+                        )
+                    )
+                    (i32.store offset=16 (local.get $frame) (local.get $resource))
+                    (i32.store offset=12
+                        (local.get $frame)
+                        (i32.load offset=16 (local.get $frame))
+                    )
+                    (call $guard)
+                    (drop (local.get $resource))
+                )
+            )
+        "#;
+
+        let bytes = wat::parse_bytes(MODULE_BYTES).unwrap();
+        let mut module = Module::from_buffer(&bytes).unwrap();
+        let imports = ExternrefImports::new(&mut module.imports).unwrap();
+        let functions = PatchedFunctions::new(&mut module, &imports, &Processor::default());
+        let (_, guarded_fns) = functions.replace_calls(&mut module).unwrap();
+        assert_eq!(guarded_fns.len(), 1);
+    }
+
+    #[test]
+    fn call_before_guard_ends_stack_prologue() {
+        const MODULE_BYTES: &[u8] = br#"
+            (module
+                (import "externref" "guard" (func $guard))
+                (import "test" "callback" (func $callback))
+                (global $__stack_pointer (mut i32) (i32.const 32768))
+
+                (func $test
+                    (global.set $__stack_pointer
+                        (i32.sub (global.get $__stack_pointer) (i32.const 16))
+                    )
+                    (call $callback)
+                    (call $guard)
+                )
+            )
+        "#;
+
+        let bytes = wat::parse_bytes(MODULE_BYTES).unwrap();
+        let mut module = Module::from_buffer(&bytes).unwrap();
+        let imports = ExternrefImports::new(&mut module.imports).unwrap();
+        let functions = PatchedFunctions::new(&mut module, &imports, &Processor::default());
+        assert_matches!(
+            functions.replace_calls(&mut module),
+            Err(Error::IncorrectGuard { function_name: Some(name), .. }) if name == "test"
+        );
     }
 
     #[test]

@@ -155,3 +155,38 @@ pub extern "C" fn test_returning_resource(
     }
     sender
 }
+
+#[externref]
+pub extern "C" fn test_non_null(mut sender: Resource<Sender>) -> Resource<Sender> {
+    let message = "non-null";
+    unsafe {
+        imports::send_message_non_null(&mut sender, message.as_ptr(), message.len());
+    }
+    sender
+}
+
+#[externref]
+pub extern "C" fn test_js_string_cast(value: Option<Resource<()>>) -> Resource<()> {
+    unsafe { imports::cast(value.as_ref()) }
+}
+
+#[externref]
+pub extern "C" fn test_resource_types(
+    value: Resource<Sender>,
+    reference: &Resource<Sender>,
+    mut_reference: &mut Resource<Sender>,
+    optional_value: Option<Resource<Sender>>,
+    optional_reference: Option<&Resource<Sender>>,
+    optional_mut_reference: Option<&mut Resource<Sender>>,
+) -> Option<Resource<Sender>> {
+    unsafe {
+        imports::round_trip(
+            value,
+            reference,
+            mut_reference,
+            optional_value,
+            optional_reference,
+            optional_mut_reference,
+        )
+    }
+}

@@ -109,10 +109,10 @@ impl Data {
 
 fn send_message(
     mut ctx: Caller<'_, Data>,
-    resource: Option<Rooted<ExternRef>>,
+    resource: Rooted<ExternRef>,
     buffer_ptr: u32,
     buffer_len: u32,
-) -> wasmtime::Result<Option<Rooted<ExternRef>>> {
+) -> wasmtime::Result<Rooted<ExternRef>> {
     let memory = ctx
         .get_export("memory")
         .and_then(Extern::into_memory)
@@ -125,7 +125,6 @@ fn send_message(
     let buffer = String::from_utf8(buffer).context("buffer is not utf-8")?;
 
     let sender = resource
-        .context("null reference passed to host")?
         .data(&ctx)?
         .context("null reference")?
         .downcast_ref::<HostSender>()
@@ -133,7 +132,7 @@ fn send_message(
     assert!(ctx.data().senders.contains(&sender.key));
 
     let bytes = Box::<str>::from(buffer);
-    ExternRef::new(&mut ctx, bytes).map(Some)
+    ExternRef::new(&mut ctx, bytes)
 }
 
 fn message_len(
@@ -234,6 +233,39 @@ fn create_linker(engine: &Engine) -> Linker<Data> {
         .func_wrap("test", "send_message_copy", send_message)
         .unwrap();
     linker
+        .func_wrap("test", "send_message_non_null", send_message)
+        .unwrap();
+    linker
+        .func_wrap(
+            "test",
+            "round_trip",
+            |_value: Rooted<ExternRef>,
+             _reference: Rooted<ExternRef>,
+             _mut_reference: Rooted<ExternRef>,
+             optional_value: Option<Rooted<ExternRef>>,
+             optional_reference: Option<Rooted<ExternRef>>,
+             optional_mut_reference: Option<Rooted<ExternRef>>| {
+                assert_eq!(optional_value.is_some(), optional_reference.is_some());
+                assert_eq!(optional_value.is_some(), optional_mut_reference.is_some());
+                optional_value
+            },
+        )
+        .unwrap();
+    linker
+        .func_wrap(
+            "wasm:js-string",
+            "cast",
+            |ctx: Caller<'_, Data>, resource: Option<Rooted<ExternRef>>| {
+                let resource = resource.context("null string")?;
+                let data = resource.data(&ctx)?.context("null reference")?;
+                if !data.is::<Box<str>>() {
+                    return Err(wasmtime::format_err!("not a string"));
+                }
+                Ok(resource)
+            },
+        )
+        .unwrap();
+    linker
         .func_wrap("test", "message_len", message_len)
         .unwrap();
     linker
@@ -302,7 +334,7 @@ fn assert_tracing_output(storage: &Storage) {
     let spans = storage.scan_spans();
     let process_span = spans.single(&name(eq("process")));
     let matches =
-        level(Level::INFO) & message(eq("parsed custom section")) & field("functions.len", 9_u64);
+        level(Level::INFO) & message(eq("parsed custom section")) & field("functions.len", 15_u64);
     process_span.scan_events().single(&matches);
 
     let patch_imports_span = spans.single(&name(eq("patch_imports")));
@@ -328,8 +360,10 @@ fn assert_tracing_output(storage: &Storage) {
 
     let transformed_imports = storage.all_spans().filter_map(|span| {
         if span.metadata().name() == "transform_import" {
-            assert_eq!(span["module"].as_str(), Some("test"));
-            span.value("name")?.as_str()
+            Some((
+                span.value("module")?.as_str()?,
+                span.value("name")?.as_str()?,
+            ))
         } else {
             None
         }
@@ -337,7 +371,14 @@ fn assert_tracing_output(storage: &Storage) {
     let transformed_imports: HashSet<_> = transformed_imports.collect();
     assert_eq!(
         transformed_imports,
-        HashSet::from_iter(["send_message", "send_message_copy", "message_len"])
+        HashSet::from_iter([
+            ("test", "send_message"),
+            ("test", "send_message_copy"),
+            ("test", "send_message_non_null"),
+            ("test", "message_len"),
+            ("test", "round_trip"),
+            ("wasm:js-string", "cast"),
+        ])
     );
 
     let transformed_exports = storage.all_spans().filter_map(|span| {
@@ -363,7 +404,7 @@ fn assert_tracing_output(storage: &Storage) {
     );
     assert_eq!(
         transformed_exports.len(),
-        4 + contains_export as usize + contains_export_with_casts as usize,
+        7 + contains_export as usize + contains_export_with_casts as usize,
         "{transformed_exports:?}"
     );
 }
@@ -398,14 +439,13 @@ fn returning_resource_from_guest(profile: CompilationProfile) {
 
     let (instance, mut store, sender) = init_sender(profile);
     let test_fn = instance
-        .get_typed_func::<Option<Rooted<ExternRef>>, Option<Rooted<ExternRef>>>(
+        .get_typed_func::<Option<Rooted<ExternRef>>, Rooted<ExternRef>>(
             &mut store,
             "test_returning_resource",
         )
         .unwrap();
     let returned_sender = test_fn.call(&mut store, Some(sender)).unwrap();
 
-    let returned_sender = returned_sender.expect("returned null");
     let returned_sender = returned_sender.data(&store).unwrap().expect("no data");
     let returned_sender = returned_sender.downcast_ref::<HostSender>().unwrap();
     assert_eq!(returned_sender.key, "sender");
@@ -429,6 +469,124 @@ fn returning_resource_from_guest(profile: CompilationProfile) {
 }
 
 #[test_casing(4, CompilationProfile::ALL)]
+fn non_null_imports_and_exports(profile: CompilationProfile) {
+    enable_tracing();
+
+    let (instance, mut store, sender) = init_sender(profile);
+    let function_type = instance
+        .get_func(&mut store, "test_non_null")
+        .unwrap()
+        .ty(&store);
+    assert!(matches!(
+        function_type.params().next().unwrap(),
+        wasmtime::ValType::Ref(ref_type) if !ref_type.is_nullable()
+    ));
+    assert!(matches!(
+        function_type.results().next().unwrap(),
+        wasmtime::ValType::Ref(ref_type) if !ref_type.is_nullable()
+    ));
+
+    let test_fn = instance
+        .get_typed_func::<Rooted<ExternRef>, Rooted<ExternRef>>(&mut store, "test_non_null")
+        .unwrap();
+    let returned = test_fn.call(&mut store, sender).unwrap();
+    let returned = returned.data(&store).unwrap().unwrap();
+    assert_eq!(returned.downcast_ref::<HostSender>().unwrap().key, "sender");
+
+    let externrefs = instance.get_table(&mut store, "externrefs").unwrap();
+    assert_refs(&mut store, &externrefs, false, &[false]);
+    assert_eq!(store.data().dropped.len(), 2);
+    store.data().assert_drops(&store, &["non-null"].into());
+}
+
+#[test_casing(4, CompilationProfile::ALL)]
+fn non_null_js_string_cast(profile: CompilationProfile) {
+    enable_tracing();
+
+    let (instance, mut store, sender) = init_sender(profile);
+    let test_fn = instance
+        .get_typed_func::<Option<Rooted<ExternRef>>, Rooted<ExternRef>>(
+            &mut store,
+            "test_js_string_cast",
+        )
+        .unwrap();
+    let string = ExternRef::new(&mut store, Box::<str>::from("js-string")).unwrap();
+    let returned = test_fn.call(&mut store, Some(string)).unwrap();
+    let returned = returned.data(&store).unwrap().unwrap();
+    assert_eq!(
+        returned.downcast_ref::<Box<str>>().unwrap().as_ref(),
+        "js-string"
+    );
+
+    let externrefs = instance.get_table(&mut store, "externrefs").unwrap();
+    for index in 0..externrefs.size(&store) {
+        assert_matches!(
+            externrefs.get(&mut store, index).unwrap(),
+            Ref::Extern(None)
+        );
+    }
+    assert_eq!(store.data().dropped.len(), 2);
+    store.data().assert_drops(&store, &["js-string"].into());
+    assert!(test_fn.call(&mut store, None).is_err());
+    assert!(test_fn.call(&mut store, Some(sender)).is_err());
+}
+
+#[test_casing(4, CompilationProfile::ALL)]
+fn resource_type_nullability(profile: CompilationProfile) {
+    enable_tracing();
+
+    let (instance, mut store, sender) = init_sender(profile);
+    let function_type = instance
+        .get_func(&mut store, "test_resource_types")
+        .unwrap()
+        .ty(&store);
+    let params: Vec<_> = function_type
+        .params()
+        .map(|ty| match ty {
+            wasmtime::ValType::Ref(ref_type) => ref_type.is_nullable(),
+            other => panic!("expected externref, got {other}"),
+        })
+        .collect();
+    assert_eq!(params, [false, false, false, true, true, true]);
+    assert!(matches!(
+        function_type.results().next().unwrap(),
+        wasmtime::ValType::Ref(ref_type) if ref_type.is_nullable()
+    ));
+
+    let test_fn = instance
+        .get_typed_func::<(
+            Rooted<ExternRef>,
+            Rooted<ExternRef>,
+            Rooted<ExternRef>,
+            Option<Rooted<ExternRef>>,
+            Option<Rooted<ExternRef>>,
+            Option<Rooted<ExternRef>>,
+        ), Option<Rooted<ExternRef>>>(&mut store, "test_resource_types")
+        .unwrap();
+    for optional in [Some(sender), None] {
+        let returned = test_fn
+            .call(
+                &mut store,
+                (sender, sender, sender, optional, optional, optional),
+            )
+            .unwrap();
+        assert_eq!(returned.is_some(), optional.is_some());
+        if let Some(returned) = returned {
+            let data = returned.data(&store).unwrap().unwrap();
+            assert_eq!(data.downcast_ref::<HostSender>().unwrap().key, "sender");
+        }
+
+        let externrefs = instance.get_table(&mut store, "externrefs").unwrap();
+        for index in 0..externrefs.size(&store) {
+            assert_matches!(
+                externrefs.get(&mut store, index).unwrap(),
+                Ref::Extern(None)
+            );
+        }
+    }
+}
+
+#[test_casing(4, CompilationProfile::ALL)]
 fn resource_copies(profile: CompilationProfile) {
     enable_tracing();
 
@@ -437,9 +595,9 @@ fn resource_copies(profile: CompilationProfile) {
     store.data_mut().externrefs = Some(externrefs);
 
     let test_fn = instance
-        .get_typed_func::<Option<Rooted<ExternRef>>, ()>(&mut store, "test_export_with_copies")
+        .get_typed_func::<Rooted<ExternRef>, ()>(&mut store, "test_export_with_copies")
         .unwrap();
-    test_fn.call(&mut store, Some(sender)).unwrap();
+    test_fn.call(&mut store, sender).unwrap();
 
     let externrefs = instance.get_table(&mut store, "externrefs").unwrap();
     // We allocate 2 copied buffers: one via `-> ResourceCopy` and another by leaking the resource
