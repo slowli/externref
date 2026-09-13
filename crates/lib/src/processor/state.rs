@@ -11,7 +11,7 @@ use walrus::{
 };
 
 use super::{
-    EXTERNREF, Error, Location, Processor,
+    EXTERNREF, Error, Location, NON_NULL_EXTERNREF, Processor,
     functions::{ExternrefImports, PatchedFunctions, get_offset},
 };
 use crate::{Function, FunctionKind};
@@ -89,6 +89,72 @@ impl ProcessingState {
             }
         }
 
+        Ok(())
+    }
+
+    pub fn process_non_null_functions(
+        functions: &[Function<'_>],
+        module: &mut Module,
+    ) -> Result<(), Error> {
+        for function in functions {
+            let Some(fn_id) = Self::function_id(function, module)? else {
+                continue;
+            };
+            let original_ty = module.funcs.get(fn_id).ty();
+            let (params, results) = module.types.params_results(original_ty);
+            let params = params.to_vec();
+            let results = results.to_vec();
+            if params.len() + results.len() != function.externrefs.bit_len() {
+                return Err(Error::UnexpectedArity {
+                    module: fn_module(&function.kind).map(str::to_owned),
+                    name: function.name.to_owned(),
+                    expected_arity: function.externrefs.bit_len(),
+                    real_arity: params.len() + results.len(),
+                });
+            }
+
+            let mut new_params = params.clone();
+            let mut new_results = results.clone();
+            for idx in function.externrefs.set_indices() {
+                let placement = if idx < new_params.len() {
+                    &mut new_params[idx]
+                } else {
+                    &mut new_results[idx - new_params.len()]
+                };
+                if *placement != EXTERNREF {
+                    return Err(Error::InvalidNonNullSignature {
+                        module: fn_module(&function.kind).map(str::to_owned),
+                        name: function.name.to_owned(),
+                    });
+                }
+                *placement = NON_NULL_EXTERNREF;
+            }
+
+            match function.kind {
+                FunctionKind::Import(_) => {
+                    let new_ty = module.types.add(&new_params, &new_results);
+                    if new_params == params {
+                        module.funcs.get_mut(fn_id).kind.unwrap_import_mut().ty = new_ty;
+                    } else {
+                        let import_id = module.funcs.get(fn_id).kind.unwrap_import().import;
+                        let target_id = module.funcs.add_import(new_ty, import_id);
+                        module.imports.get_mut(import_id).kind = ImportKind::Function(target_id);
+                        let adapter = non_null_adapter(module, target_id, &params, &results);
+                        module.funcs.get_mut(fn_id).kind = walrus::FunctionKind::Local(adapter);
+                    }
+                }
+                FunctionKind::Export => {
+                    let adapter = non_null_adapter(module, fn_id, &new_params, &new_results);
+                    let adapter_id = module.funcs.add_local(adapter);
+                    let export = module
+                        .exports
+                        .iter_mut()
+                        .find(|export| export.name == function.name)
+                        .unwrap();
+                    export.item = ExportItem::Function(adapter_id);
+                }
+            }
+        }
         Ok(())
     }
 
@@ -260,6 +326,51 @@ impl ProcessingState {
         ir::dfs_pre_order_mut(&mut replacer, local_fn, local_fn.entry_block());
         Ok(())
     }
+}
+
+fn non_null_adapter(
+    module: &mut Module,
+    target_id: FunctionId,
+    params: &[ValType],
+    results: &[ValType],
+) -> LocalFunction {
+    let target_ty = module.funcs.get(target_id).ty();
+    let (target_params, target_results) = module.types.params_results(target_ty);
+    let target_params = target_params.to_vec();
+    let target_results = target_results.to_vec();
+    let mut builder = FunctionBuilder::new(&mut module.types, params, results);
+    let args: Vec<_> = params.iter().map(|&ty| module.locals.add(ty)).collect();
+    let mut body = builder.func_body();
+    for ((&arg, &param), &target_param) in args.iter().zip(params).zip(&target_params) {
+        body.local_get(arg);
+        if param == EXTERNREF && target_param == NON_NULL_EXTERNREF {
+            body.ref_as_non_null();
+        }
+    }
+    body.call(target_id);
+
+    if results
+        .iter()
+        .zip(&target_results)
+        .any(|(&result, &target_result)| result == NON_NULL_EXTERNREF && target_result == EXTERNREF)
+    {
+        let result_locals: Vec<_> = target_results
+            .iter()
+            .map(|&ty| module.locals.add(ty))
+            .collect();
+        for &local in result_locals.iter().rev() {
+            body.local_set(local);
+        }
+        for ((&local, &result), &target_result) in
+            result_locals.iter().zip(results).zip(&target_results)
+        {
+            body.local_get(local);
+            if result == NON_NULL_EXTERNREF && target_result == EXTERNREF {
+                body.ref_as_non_null();
+            }
+        }
+    }
+    builder.local_func(args)
 }
 
 fn function_offset(local_fn: &LocalFunction) -> Option<u32> {

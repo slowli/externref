@@ -59,6 +59,49 @@ that can process WASM modules with slightly less fine-grained control.
 > **Important.** The processor should run before WASM optimization tools such as
 > `wasm-opt` from binaryen.
 
+### Reference nullability
+
+The Rust argument or return type determines nullability in the processed WASM signature:
+
+| Rust type | WASM type |
+| --- | --- |
+| `Resource<T>` | `(ref extern)` |
+| `&Resource<T>` | `(ref extern)` |
+| `&mut Resource<T>` | `(ref extern)` |
+| `Option<Resource<T>>` | `(ref null extern)` |
+| `Option<&Resource<T>>` | `(ref null extern)` |
+| `Option<&mut Resource<T>>` | `(ref null extern)` |
+
+The same rules apply to `ResourceCopy` and resource type aliases marked with `#[resource]`.
+The `Option` wrapper must be visible in the signature for the macro to recognize it.
+No separate nullability attribute is needed.
+
+For example, the JS string `cast` builtin requires a nullable parameter and a non-null result:
+
+```rust,no_run
+use externref::{externref, Resource};
+
+#[externref(stubs)]
+#[link(wasm_import_module = "wasm:js-string")]
+unsafe extern "C" {
+    fn cast(value: Option<&Resource<()>>) -> Resource<()>;
+}
+```
+
+An existing resource can be passed as `cast(Some(&resource))`. Use `Option` in an import
+signature whenever the host requires a nullable WASM type, even if the host rejects null
+values at runtime, as JS string builtins do.
+
+The Rust representation and resource cleanup are unchanged. The internal table remains
+nullable, and the processor inserts `ref.as_non_null` checks where references leave it
+through a non-null interface. Nullable resources already map host nulls to `None` at runtime;
+no additional Rust wrapper type is required.
+
+Use the matching updated processor or CLI: older processors do not read the supplementary
+non-null metadata. The WASM engine must support non-null reference types. When optimizing
+with Binaryen, enable GC support with `wasm-opt --enable-gc`; otherwise, it can lower
+non-null signatures to nullable ones and invalidate builtin imports.
+
 ### Limitations
 
 If you compile WASM without compilation optimizations, you might get "incorrectly placed externref guard" errors during WASM processing.
@@ -87,7 +130,7 @@ pub struct Bytes(());
 #[externref]
 #[link(wasm_import_module = "arena")]
 extern "C" {
-    // This import will have signature `(externref, i32) -> externref`
+    // This import will have signature `((ref extern), i32) -> externref`
     // on host.
     fn alloc(arena: &Resource<Arena>, size: usize) 
         -> Option<Resource<Bytes>>;
@@ -98,7 +141,7 @@ extern "C" {
 unsafe fn alloc(_: &Resource<Arena>, _: usize) 
     -> Option<Resource<Bytes>> { None }
 
-// This export will have signature `(externref) -> ()` on host.
+// This export will have signature `((ref extern)) -> ()` on host.
 #[externref]
 #[unsafe(export_name = "test_export")]
 pub extern "C" fn test_export(arena: &Resource<Arena>) {

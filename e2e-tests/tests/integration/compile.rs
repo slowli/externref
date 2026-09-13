@@ -74,7 +74,13 @@ fn optimize_wasm(wasm_module: Vec<u8>, temp_dir: &Path) -> Vec<u8> {
     let output_path = temp_dir.join("out.wasm");
     let mut command = Command::new("wasm-opt");
     command
-        .args(["-Os", "--enable-mutable-globals", "--strip-debug", "-o"])
+        .args([
+            "-Os",
+            "--enable-mutable-globals",
+            "--enable-gc",
+            "--strip-debug",
+            "-o",
+        ])
         .arg(&output_path)
         .arg(&module_path)
         .stderr(Stdio::piped());
