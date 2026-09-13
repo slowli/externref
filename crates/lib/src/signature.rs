@@ -202,6 +202,10 @@ impl<'a> Function<'a> {
     // **NB.** Keep synced with the `declare_function!()` macro below.
     pub const CUSTOM_SECTION_NAME: &'static str = "__externrefs";
 
+    /// Name of the supplementary section marking non-null `externref` args / return types.
+    /// Records use the same format as [`Self::CUSTOM_SECTION_NAME`].
+    pub const NON_NULL_CUSTOM_SECTION_NAME: &'static str = "__externrefs_non_null";
+
     /// Computes length of a custom section for this function signature.
     #[doc(hidden)]
     pub const fn custom_section_len(&self) -> usize {
@@ -260,6 +264,21 @@ impl<'a> Function<'a> {
 #[macro_export]
 #[doc(hidden)]
 macro_rules! declare_function {
+    ($signature:expr, non_null = $non_null:expr) => {
+        $crate::declare_function!($signature);
+        const _: () = {
+            const FUNCTION: $crate::Function = $signature;
+            const NON_NULL_FUNCTION: $crate::Function = $crate::Function {
+                kind: FUNCTION.kind,
+                name: FUNCTION.name,
+                externrefs: $non_null,
+            };
+
+            #[cfg_attr(target_arch = "wasm32", unsafe(link_section = "__externrefs_non_null"))]
+            static NON_NULL_DATA_SECTION: [u8; NON_NULL_FUNCTION.custom_section_len()] =
+                NON_NULL_FUNCTION.custom_section();
+        };
+    };
     ($signature:expr) => {
         const _: () = {
             const FUNCTION: $crate::Function = $signature;

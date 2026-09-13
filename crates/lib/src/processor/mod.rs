@@ -12,6 +12,8 @@
 //!   local functions.
 //! - Patch signatures and implementations of imported / exported functions so that they
 //!   use `externref`s where appropriate.
+//! - Apply optional non-null signature declarations, using `ref.as_non_null` adapters
+//!   where nullable internal references cross a non-null interface.
 //! - Add an initially empty, unconstrained table with `externref` elements and optionally
 //!   export it from the module. The host can use the table to inspect currently used references
 //!   (e.g., to save / restore WASM instance state).
@@ -30,6 +32,8 @@
 //! Optimizing WASM after the processor has an additional advantage in that it can
 //! optimize the changes produced by it (optimization is hard, and is best left
 //! to the dedicated tools).
+//! When non-null references are used, pass `--enable-gc` to Binaryen to prevent it from
+//! lowering non-null signatures back to nullable ones.
 //!
 //! # Examples
 //!
@@ -58,6 +62,11 @@ mod state;
 
 /// Externref type as a constant.
 const EXTERNREF: ValType = ValType::Ref(RefType::EXTERNREF);
+
+const NON_NULL_EXTERNREF: ValType = ValType::Ref(RefType {
+    nullable: false,
+    ..RefType::EXTERNREF
+});
 
 /// WASM module processor encapsulating processing options.
 #[derive(Debug)]
@@ -105,18 +114,28 @@ impl<'a> Processor<'a> {
     #[cfg_attr(feature = "tracing", tracing::instrument(skip_all, err))]
     pub fn process(&self, module: &mut Module) -> Result<(), Error> {
         let raw_section = module.customs.remove_raw(Function::CUSTOM_SECTION_NAME);
+        let non_null_section = module
+            .customs
+            .remove_raw(Function::NON_NULL_CUSTOM_SECTION_NAME);
         let Some(raw_section) = raw_section else {
+            if non_null_section.is_some() {
+                return Err(Error::MissingExternrefSection);
+            }
             #[cfg(feature = "tracing")]
             tracing::info!("module contains no custom section; skipping");
             return Ok(());
         };
         let functions = Self::parse_section(&raw_section.data)?;
+        let non_null_functions = non_null_section
+            .as_ref()
+            .map_or_else(|| Ok(vec![]), |section| Self::parse_section(&section.data))?;
         #[cfg(feature = "tracing")]
         tracing::info!(functions.len = functions.len(), "parsed custom section");
 
         let state = ProcessingState::new(module, self)?;
         let guarded_fns = state.replace_functions(module)?;
         state.process_functions(&functions, &guarded_fns, module)?;
+        ProcessingState::process_non_null_functions(&non_null_functions, module)?;
 
         gc::run(module);
         Ok(())
