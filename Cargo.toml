@@ -25,7 +25,7 @@ predicates = { version = "3.1.4", default-features = false }
 proc-macro2 = "1.0"
 quote = "1.0"
 static_assertions = "1.1.0"
-syn = "2.0"
+syn = "3.0"
 tempfile = "3.27.0"
 term-transcript = { version = "0.5.0", features = ["portable-pty"] }
 test-casing = "0.2.0"
