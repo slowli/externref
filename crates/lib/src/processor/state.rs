@@ -14,7 +14,7 @@ use super::{
     EXTERNREF, Error, Location, NON_NULL_EXTERNREF, Processor,
     functions::{ExternrefImports, PatchedFunctions, get_offset},
 };
-use crate::{Function, FunctionKind};
+use crate::{Function, FunctionKind, ValueType};
 
 #[derive(Debug)]
 pub(crate) struct ProcessingState {
@@ -53,18 +53,16 @@ impl ProcessingState {
 
         // Determine which functions return externrefs (only patched imports or exports can
         // do that).
-        let mut functions_returning_ref = HashSet::new();
-        if let Some(fn_id) = self.patched_fns.get_ref_id() {
-            functions_returning_ref.insert(fn_id);
-        }
+        let mut functions_returning_ref = self.patched_fns.ref_functions().clone();
 
         for (function, &fn_id) in functions.iter().zip(&function_ids) {
             if let Some(fn_id) = fn_id {
                 let type_id = module.funcs.get(fn_id).ty();
-                let results_len = module.types.get(type_id).results().len();
-                let refs = &function.externrefs;
-                if results_len == 1 && refs.is_set(refs.bit_len() - 1) {
-                    functions_returning_ref.insert(fn_id);
+                let (params, results) = module.types.params_results(type_id);
+                if results.len() == 1 {
+                    if let Some(ty) = function.types.get(params.len()).and_then(reference_type) {
+                        functions_returning_ref.insert(fn_id, ty);
+                    }
                 }
 
                 if let FunctionKind::Import(_) = function.kind {
@@ -89,72 +87,6 @@ impl ProcessingState {
             }
         }
 
-        Ok(())
-    }
-
-    pub fn process_non_null_functions(
-        functions: &[Function<'_>],
-        module: &mut Module,
-    ) -> Result<(), Error> {
-        for function in functions {
-            let Some(fn_id) = Self::function_id(function, module)? else {
-                continue;
-            };
-            let original_ty = module.funcs.get(fn_id).ty();
-            let (params, results) = module.types.params_results(original_ty);
-            let params = params.to_vec();
-            let results = results.to_vec();
-            if params.len() + results.len() != function.externrefs.bit_len() {
-                return Err(Error::UnexpectedArity {
-                    module: fn_module(&function.kind).map(str::to_owned),
-                    name: function.name.to_owned(),
-                    expected_arity: function.externrefs.bit_len(),
-                    real_arity: params.len() + results.len(),
-                });
-            }
-
-            let mut new_params = params.clone();
-            let mut new_results = results.clone();
-            for idx in function.externrefs.set_indices() {
-                let placement = if idx < new_params.len() {
-                    &mut new_params[idx]
-                } else {
-                    &mut new_results[idx - new_params.len()]
-                };
-                if *placement != EXTERNREF {
-                    return Err(Error::InvalidNonNullSignature {
-                        module: fn_module(&function.kind).map(str::to_owned),
-                        name: function.name.to_owned(),
-                    });
-                }
-                *placement = NON_NULL_EXTERNREF;
-            }
-
-            match function.kind {
-                FunctionKind::Import(_) => {
-                    let new_ty = module.types.add(&new_params, &new_results);
-                    if new_params == params {
-                        module.funcs.get_mut(fn_id).kind.unwrap_import_mut().ty = new_ty;
-                    } else {
-                        let import_id = module.funcs.get(fn_id).kind.unwrap_import().import;
-                        let target_id = module.funcs.add_import(new_ty, import_id);
-                        module.imports.get_mut(import_id).kind = ImportKind::Function(target_id);
-                        let adapter = non_null_adapter(module, target_id, &params, &results);
-                        module.funcs.get_mut(fn_id).kind = walrus::FunctionKind::Local(adapter);
-                    }
-                }
-                FunctionKind::Export => {
-                    let adapter = non_null_adapter(module, fn_id, &new_params, &new_results);
-                    let adapter_id = module.funcs.add_local(adapter);
-                    let export = module
-                        .exports
-                        .iter_mut()
-                        .find(|export| export.name == function.name)
-                        .unwrap();
-                    export.item = ExportItem::Function(adapter_id);
-                }
-            }
-        }
         Ok(())
     }
 
@@ -207,7 +139,7 @@ impl ProcessingState {
     #[allow(clippy::needless_collect)] // false positive
     fn transform_export(
         module: &mut Module,
-        functions_returning_ref: &HashSet<FunctionId>,
+        functions_returning_ref: &HashMap<FunctionId, ValType>,
         fn_id: FunctionId,
         function: &Function<'_>,
     ) -> Result<(), Error> {
@@ -215,9 +147,12 @@ impl ProcessingState {
         let (params, results) = patch_type_inner(&module.types, function, local_fn.ty())?;
 
         let mut locals_mapping = HashMap::new();
-        for idx in function.externrefs.set_indices() {
+        for (idx, ty) in function.types.iter().enumerate() {
+            let Some(ty) = reference_type(ty) else {
+                continue;
+            };
             if let Some(arg) = local_fn.args.get_mut(idx) {
-                let new_local = module.locals.add(EXTERNREF);
+                let new_local = module.locals.add(ty);
                 locals_mapping.insert(new_local, *arg);
                 *arg = new_local;
             }
@@ -255,7 +190,7 @@ impl ProcessingState {
     /// - Locals assigned from calling a function that returns `externref`. We know such functions
     ///   in advance; they are among imported functions (in which case whether a function
     ///   returns an `externref` is determined based on the function sig from the custom section),
-    ///   plus the `exernref::get` function.
+    ///   plus the `externref::get` and `externref::get_non_null` functions.
     ///
     /// Locals of the second type can occur in any local function; thus, we need to scan all
     /// of them. We scan for these locals by searching tuples of `call $fn` + `local.set $r` /
@@ -278,6 +213,7 @@ impl ProcessingState {
     /// means that we should introduce a new local for each call to be on the safe side.
     /// (We could reuse locals in some cases, but this requires more work.) A single use is
     /// encoded as a tuple (sequence ID, index of `local.get $ref` in the sequence).
+    /// Each replacement local retains the nullability of its argument or call result.
     ///
     /// Finally, after collecting all uses, we replace locals with the new ones. For exports,
     /// this process is combined with cloning function code.
@@ -287,7 +223,7 @@ impl ProcessingState {
     )]
     fn transform_local_fn(
         module: &mut Module,
-        functions_returning_ref: &HashSet<FunctionId>,
+        functions_returning_ref: &HashMap<FunctionId, ValType>,
         can_have_locals: bool,
         fn_id: FunctionId,
     ) -> Result<(), Error> {
@@ -328,51 +264,6 @@ impl ProcessingState {
     }
 }
 
-fn non_null_adapter(
-    module: &mut Module,
-    target_id: FunctionId,
-    params: &[ValType],
-    results: &[ValType],
-) -> LocalFunction {
-    let target_ty = module.funcs.get(target_id).ty();
-    let (target_params, target_results) = module.types.params_results(target_ty);
-    let target_params = target_params.to_vec();
-    let target_results = target_results.to_vec();
-    let mut builder = FunctionBuilder::new(&mut module.types, params, results);
-    let args: Vec<_> = params.iter().map(|&ty| module.locals.add(ty)).collect();
-    let mut body = builder.func_body();
-    for ((&arg, &param), &target_param) in args.iter().zip(params).zip(&target_params) {
-        body.local_get(arg);
-        if param == EXTERNREF && target_param == NON_NULL_EXTERNREF {
-            body.ref_as_non_null();
-        }
-    }
-    body.call(target_id);
-
-    if results
-        .iter()
-        .zip(&target_results)
-        .any(|(&result, &target_result)| result == NON_NULL_EXTERNREF && target_result == EXTERNREF)
-    {
-        let result_locals: Vec<_> = target_results
-            .iter()
-            .map(|&ty| module.locals.add(ty))
-            .collect();
-        for &local in result_locals.iter().rev() {
-            body.local_set(local);
-        }
-        for ((&local, &result), &target_result) in
-            result_locals.iter().zip(results).zip(&target_results)
-        {
-            body.local_get(local);
-            if result == NON_NULL_EXTERNREF && target_result == EXTERNREF {
-                body.ref_as_non_null();
-            }
-        }
-    }
-    builder.local_func(args)
-}
-
 fn function_offset(local_fn: &LocalFunction) -> Option<u32> {
     local_fn
         .block(local_fn.entry_block())
@@ -386,22 +277,22 @@ fn function_offset(local_fn: &LocalFunction) -> Option<u32> {
 #[derive(Debug)]
 struct RefCallDetector<'a> {
     locals: &'a mut ModuleLocals,
-    functions_returning_ref: &'a HashSet<FunctionId>,
+    functions_returning_ref: &'a HashMap<FunctionId, ValType>,
     /// Mapping from a new local to the old local.
     new_locals: HashMap<LocalId, LocalId>,
 }
 
 impl RefCallDetector<'_> {
-    fn returns_ref(&self, instr: &ir::Instr) -> bool {
+    fn return_type(&self, instr: &ir::Instr) -> Option<ValType> {
         if let ir::Instr::Call(call) = instr {
-            self.functions_returning_ref.contains(&call.func)
+            self.functions_returning_ref.get(&call.func).copied()
         } else {
-            false
+            None
         }
     }
 
-    fn replace_local(&mut self, local: &mut LocalId) {
-        let new_local = self.locals.add(EXTERNREF);
+    fn replace_local(&mut self, local: &mut LocalId, ty: ValType) {
+        let new_local = self.locals.add(ty);
         self.new_locals.insert(new_local, *local);
         *local = new_local;
     }
@@ -409,18 +300,18 @@ impl RefCallDetector<'_> {
 
 impl ir::VisitorMut for RefCallDetector<'_> {
     fn start_instr_seq_mut(&mut self, instr_seq: &mut ir::InstrSeq) {
-        let mut ref_on_top_of_stack = false;
+        let mut ref_on_top_of_stack = None;
         for (instr, _) in &mut instr_seq.instrs {
-            match instr {
-                ir::Instr::LocalSet(local_set) if ref_on_top_of_stack => {
-                    self.replace_local(&mut local_set.local);
-                    ref_on_top_of_stack = false;
+            match (instr, ref_on_top_of_stack) {
+                (ir::Instr::LocalSet(local_set), Some(ty)) => {
+                    self.replace_local(&mut local_set.local, ty);
+                    ref_on_top_of_stack = None;
                 }
-                ir::Instr::LocalTee(local_tee) if ref_on_top_of_stack => {
-                    self.replace_local(&mut local_tee.local);
+                (ir::Instr::LocalTee(local_tee), Some(ty)) => {
+                    self.replace_local(&mut local_tee.local, ty);
                 }
-                _ => {
-                    ref_on_top_of_stack = self.returns_ref(instr);
+                (instr, _) => {
+                    ref_on_top_of_stack = self.return_type(instr);
                 }
             }
         }
@@ -662,37 +553,40 @@ fn patch_type_inner(
     ty: TypeId,
 ) -> Result<(Vec<ValType>, Vec<ValType>), Error> {
     let (params, results) = types.params_results(ty);
-    if params.len() + results.len() != function.externrefs.bit_len() {
+    if params.len() + results.len() != function.types.len() {
         return Err(Error::UnexpectedArity {
             module: fn_module(&function.kind).map(str::to_owned),
             name: function.name.to_owned(),
-            expected_arity: function.externrefs.bit_len(),
+            expected_arity: function.types.len(),
             real_arity: params.len() + results.len(),
         });
     }
 
     let mut new_params = params.to_vec();
     let mut new_results = results.to_vec();
-    for idx in function.externrefs.set_indices() {
-        let placement = if idx < new_params.len() {
+    for (idx, ty) in function.types.iter().enumerate() {
+        let Some(ty) = reference_type(ty) else {
+            continue;
+        };
+        let placement = if idx < params.len() {
             &mut new_params[idx]
         } else {
-            &mut new_results[idx - new_params.len()]
+            &mut new_results[idx - params.len()]
         };
 
         if *placement != ValType::I32 {
             return Err(Error::UnexpectedType {
                 module: fn_module(&function.kind).map(str::to_owned),
                 name: function.name.to_owned(),
-                location: if idx < new_params.len() {
+                location: if idx < params.len() {
                     Location::Arg(idx)
                 } else {
-                    Location::ReturnType(idx - new_params.len())
+                    Location::ReturnType(idx - params.len())
                 },
-                real_type: new_params[idx],
+                real_type: *placement,
             });
         }
-        *placement = EXTERNREF;
+        *placement = ty;
     }
 
     #[cfg(feature = "tracing")]
@@ -704,6 +598,14 @@ fn patch_type_inner(
         "replaced function signature"
     );
     Ok((new_params, new_results))
+}
+
+fn reference_type(ty: ValueType) -> Option<ValType> {
+    match ty {
+        ValueType::Other => None,
+        ValueType::NonNullExternref => Some(NON_NULL_EXTERNREF),
+        ValueType::NullableExternref => Some(EXTERNREF),
+    }
 }
 
 fn fn_module<'a>(fn_kind: &FunctionKind<'a>) -> Option<&'a str> {
@@ -737,12 +639,12 @@ mod tests {
 
         let module = wat::parse_bytes(MODULE_BYTES).unwrap();
         let mut module = Module::from_buffer(&module).unwrap();
-        let functions_returning_ref: HashSet<_> = module
+        let functions_returning_ref: HashMap<_, _> = module
             .funcs
             .iter()
             .filter_map(|function| {
                 if matches!(&function.kind, walrus::FunctionKind::Import(_)) {
-                    Some(function.id())
+                    Some((function.id(), EXTERNREF))
                 } else {
                     None
                 }

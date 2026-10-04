@@ -32,15 +32,6 @@ pub enum Error {
     Read(ReadError),
     /// Error parsing the WASM module.
     Wasm(anyhow::Error),
-    /// Non-null metadata is present without the primary function declarations.
-    MissingExternrefSection,
-    /// Non-null metadata marks an argument or result that is not an `externref`.
-    InvalidNonNullSignature {
-        /// Name of the module; `None` for exported functions.
-        module: Option<String>,
-        /// Name of the function.
-        name: String,
-    },
 
     /// Unexpected type of an import (expected a function).
     UnexpectedImportType {
@@ -103,21 +94,6 @@ impl fmt::Display for Error {
         match self {
             Self::Read(err) => write!(formatter, "failed reading WASM custom section: {err}"),
             Self::Wasm(err) => write!(formatter, "failed reading WASM module: {err}"),
-            Self::MissingExternrefSection => {
-                write!(
-                    formatter,
-                    "non-null metadata requires the `__externrefs` section"
-                )
-            }
-            Self::InvalidNonNullSignature { module, name } => {
-                let module_descr = module
-                    .as_ref()
-                    .map_or_else(String::new, |module| format!(" imported from `{module}`"));
-                write!(
-                    formatter,
-                    "non-null metadata for function `{name}`{module_descr} must only mark externrefs"
-                )
-            }
 
             Self::UnexpectedImportType { module, name } => {
                 write!(

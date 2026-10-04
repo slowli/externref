@@ -93,12 +93,15 @@ signature whenever the host requires a nullable WASM type, even if the host reje
 values at runtime, as JS string builtins do.
 
 The Rust representation and resource cleanup are unchanged. The internal table remains
-nullable, and the processor inserts `ref.as_non_null` checks where references leave it
-through a non-null interface. Nullable resources already map host nulls to `None` at runtime;
-no additional Rust wrapper type is required.
+nullable. Non-null resource reads use a typed table lookup with `ref.as_non_null`, while
+optional reads return a nullable reference. Function signatures and locals are transformed
+together without additional import/export adapter functions. Nullable resources map host
+nulls to `None` at runtime; no additional Rust wrapper type is required.
 
-Use the matching updated processor or CLI: older processors do not read the supplementary
-non-null metadata. The WASM engine must support non-null reference types. When optimizing
+Use the matching updated processor or CLI: the `__externrefs` section now encodes each
+argument and result in two bits, distinguishing ordinary values, non-null references and
+nullable references. This format is incompatible with earlier versions; rebuild WASM
+modules when upgrading. The WASM engine must support non-null reference types. When optimizing
 with Binaryen, enable GC support with `wasm-opt --enable-gc`; otherwise, it can lower
 non-null signatures to nullable ones and invalidate builtin imports.
 

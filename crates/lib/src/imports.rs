@@ -8,6 +8,9 @@ unsafe extern "C" {
     #[link_name = "get"]
     pub(crate) fn get_externref(id: usize) -> ExternRef;
 
+    #[link_name = "get_non_null"]
+    pub(crate) fn get_non_null_externref(id: usize) -> ExternRef;
+
     #[link_name = "insert"]
     pub(crate) fn insert_externref(id: ExternRef) -> usize;
 
@@ -20,6 +23,11 @@ unsafe extern "C" {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) unsafe fn get_externref(id: usize) -> ExternRef {
+    ExternRef(id)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) unsafe fn get_non_null_externref(id: usize) -> ExternRef {
     ExternRef(id)
 }
 

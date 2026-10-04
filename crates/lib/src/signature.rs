@@ -7,90 +7,118 @@ use crate::{
     error::{ReadError, ReadErrorKind},
 };
 
-/// Builder for [`BitSlice`]s that can be used in const contexts.
-#[doc(hidden)] // used by macro; not public (yet?)
-#[derive(Debug)]
-pub struct BitSliceBuilder<const BYTES: usize> {
-    bytes: [u8; BYTES],
-    bit_len: usize,
+/// Type information needed to transform a function argument or result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ValueType {
+    /// A value that is not an external reference; its WASM type is unchanged.
+    Other = 0,
+    /// A non-null external reference, `(ref extern)`.
+    NonNullExternref = 1,
+    /// A nullable external reference, `(ref null extern)`.
+    NullableExternref = 2,
 }
 
-#[doc(hidden)] // not public yet
-impl<const BYTES: usize> BitSliceBuilder<BYTES> {
+/// Const builder for packed function types.
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct TypeSliceBuilder<const BYTES: usize> {
+    bytes: [u8; BYTES],
+    len: usize,
+}
+
+#[doc(hidden)]
+impl<const BYTES: usize> TypeSliceBuilder<BYTES> {
     #[must_use]
-    pub const fn with_set_bit(mut self, bit_idx: usize) -> Self {
-        assert!(bit_idx < self.bit_len);
-        self.bytes[bit_idx / 8] |= 1 << (bit_idx % 8);
+    pub const fn with_type(mut self, idx: usize, ty: ValueType) -> Self {
+        assert!(idx < self.len);
+        let shift = (idx % 4) * 2;
+        self.bytes[idx / 4] = (self.bytes[idx / 4] & !(3 << shift)) | ((ty as u8) << shift);
         self
     }
 
-    pub const fn build(&self) -> BitSlice<'_> {
-        BitSlice {
+    pub const fn build(&self) -> TypeSlice<'_> {
+        TypeSlice {
             bytes: &self.bytes,
-            bit_len: self.bit_len,
+            len: self.len,
         }
     }
 }
 
-/// Slice of bits. This type is used to mark [`Resource`](crate::Resource) args
-/// in imported / exported functions.
-// Why invent a new type? Turns out that existing implementations (e.g., `bv` and `bitvec`)
-// cannot be used in const contexts.
+/// Function argument and result types packed into two bits per value.
+///
+/// Each byte stores up to four types, starting with its least significant bits:
+/// `00` is an ordinary value, `01` is non-null, and `10` is nullable. `11` is invalid,
+/// and unused bits in the last byte must be zero. The serialized slice starts with
+/// a little-endian `u32` type count, followed by the packed bytes.
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
-pub struct BitSlice<'a> {
+pub struct TypeSlice<'a> {
     bytes: &'a [u8],
-    bit_len: usize,
+    len: usize,
 }
 
-impl BitSlice<'static> {
+impl TypeSlice<'static> {
     #[doc(hidden)]
-    pub const fn builder<const BYTES: usize>(bit_len: usize) -> BitSliceBuilder<BYTES> {
-        assert!(BYTES > 0);
-        assert!(bit_len > (BYTES - 1) * 8 && bit_len <= BYTES * 8);
-        BitSliceBuilder {
-            bytes: [0_u8; BYTES],
-            bit_len,
+    pub const fn builder<const BYTES: usize>(len: usize) -> TypeSliceBuilder<BYTES> {
+        assert!(BYTES == len.div_ceil(4));
+        TypeSliceBuilder {
+            bytes: [0; BYTES],
+            len,
         }
     }
 }
 
-impl<'a> BitSlice<'a> {
-    /// Returns the number of bits in this slice.
-    pub fn bit_len(&self) -> usize {
-        self.bit_len
+impl<'a> TypeSlice<'a> {
+    /// Returns the number of types in this slice.
+    pub fn len(&self) -> usize {
+        self.len
     }
 
-    /// Checks if a bit with the specified 0-based index is set.
-    pub fn is_set(&self, idx: usize) -> bool {
-        if idx > self.bit_len {
-            return false;
+    /// Returns whether this slice contains no types.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Returns a type by its zero-based index.
+    pub fn get(&self, idx: usize) -> Option<ValueType> {
+        if idx >= self.len {
+            return None;
         }
-        let mask = 1 << (idx % 8);
-        self.bytes[idx / 8] & mask > 0
+        Some(self.type_at(idx))
     }
 
-    /// Iterates over the indexes of set bits in this slice.
-    pub fn set_indices(&self) -> impl Iterator<Item = usize> + '_ {
-        (0..self.bit_len).filter(|&idx| self.is_set(idx))
+    fn type_at(&self, idx: usize) -> ValueType {
+        match (self.bytes[idx / 4] >> ((idx % 4) * 2)) & 3 {
+            0 => ValueType::Other,
+            1 => ValueType::NonNullExternref,
+            2 => ValueType::NullableExternref,
+            _ => unreachable!(),
+        }
     }
 
-    /// Returns the number of set bits in this slice.
-    pub fn count_ones(&self) -> usize {
-        let ones: u32 = self.bytes.iter().copied().map(u8::count_ones).sum();
-        ones as usize
+    /// Iterates over the types in this slice.
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = ValueType> + '_ {
+        (0..self.len).map(|idx| self.type_at(idx))
     }
 
     fn read_from_section(buffer: &mut &'a [u8], context: &str) -> Result<Self, ReadError> {
-        let bit_len = read_u32(buffer, || format!("length for {context}"))? as usize;
-        let byte_len = bit_len.div_ceil(8);
+        let len = read_u32(buffer, || format!("length for {context}"))? as usize;
+        let byte_len = len.div_ceil(4);
         if buffer.len() < byte_len {
-            Err(ReadErrorKind::UnexpectedEof.with_context(context))
-        } else {
-            let bytes = &buffer[..byte_len];
-            *buffer = &buffer[byte_len..];
-            Ok(Self { bytes, bit_len })
+            return Err(ReadErrorKind::UnexpectedEof.with_context(context));
         }
+        let bytes = &buffer[..byte_len];
+        for (byte_idx, &byte) in bytes.iter().enumerate() {
+            for slot in 0..4 {
+                let tag = (byte >> (slot * 2)) & 3;
+                if tag == 3 || (byte_idx * 4 + slot >= len && tag != 0) {
+                    return Err(ReadErrorKind::InvalidTypeEncoding.with_context(context));
+                }
+            }
+        }
+        *buffer = &buffer[byte_len..];
+        Ok(Self { bytes, len })
     }
 }
 
@@ -192,8 +220,8 @@ pub struct Function<'a> {
     pub kind: FunctionKind<'a>,
     /// Name of this function.
     pub name: &'a str,
-    /// Bit slice marking [`Resource`](crate::Resource) args / return type.
-    pub externrefs: BitSlice<'a>,
+    /// Packed argument and result types, including external reference nullability.
+    pub types: TypeSlice<'a>,
 }
 
 impl<'a> Function<'a> {
@@ -202,14 +230,10 @@ impl<'a> Function<'a> {
     // **NB.** Keep synced with the `declare_function!()` macro below.
     pub const CUSTOM_SECTION_NAME: &'static str = "__externrefs";
 
-    /// Name of the supplementary section marking non-null `externref` args / return types.
-    /// Records use the same format as [`Self::CUSTOM_SECTION_NAME`].
-    pub const NON_NULL_CUSTOM_SECTION_NAME: &'static str = "__externrefs_non_null";
-
     /// Computes length of a custom section for this function signature.
     #[doc(hidden)]
     pub const fn custom_section_len(&self) -> usize {
-        self.kind.len_in_custom_section() + 4 + self.name.len() + 4 + self.externrefs.bytes.len()
+        self.kind.len_in_custom_section() + 4 + self.name.len() + 4 + self.types.bytes.len()
     }
 
     #[doc(hidden)]
@@ -227,11 +251,11 @@ impl<'a> Function<'a> {
             i += 1;
         }
 
-        write_u32!(buffer, self.externrefs.bit_len as u32, pos);
+        write_u32!(buffer, self.types.len as u32, pos);
         pos += 4;
         let mut i = 0;
-        while i < self.externrefs.bytes.len() {
-            buffer[pos] = self.externrefs.bytes[i];
+        while i < self.types.bytes.len() {
+            buffer[pos] = self.types.bytes[i];
             i += 1;
             pos += 1;
         }
@@ -256,7 +280,7 @@ impl<'a> Function<'a> {
         Ok(Self {
             kind,
             name: read_str(buffer, "function name")?,
-            externrefs: BitSlice::read_from_section(buffer, "externref bit slice")?,
+            types: TypeSlice::read_from_section(buffer, "function types")?,
         })
     }
 }
@@ -264,21 +288,6 @@ impl<'a> Function<'a> {
 #[macro_export]
 #[doc(hidden)]
 macro_rules! declare_function {
-    ($signature:expr, non_null = $non_null:expr) => {
-        $crate::declare_function!($signature);
-        const _: () = {
-            const FUNCTION: $crate::Function = $signature;
-            const NON_NULL_FUNCTION: $crate::Function = $crate::Function {
-                kind: FUNCTION.kind,
-                name: FUNCTION.name,
-                externrefs: $non_null,
-            };
-
-            #[cfg_attr(target_arch = "wasm32", unsafe(link_section = "__externrefs_non_null"))]
-            static NON_NULL_DATA_SECTION: [u8; NON_NULL_FUNCTION.custom_section_len()] =
-                NON_NULL_FUNCTION.custom_section();
-        };
-    };
     ($signature:expr) => {
         const _: () = {
             const FUNCTION: $crate::Function = $signature;
@@ -294,11 +303,84 @@ mod tests {
     use super::*;
 
     #[test]
+    fn packed_types_encode_nullability() {
+        const TYPES: TypeSlice<'static> = TypeSlice::builder::<2>(5)
+            .with_type(0, ValueType::NullableExternref)
+            .with_type(1, ValueType::NonNullExternref)
+            .with_type(4, ValueType::NonNullExternref)
+            .build();
+
+        assert_eq!(TYPES.bytes, [0b0000_0110, 0b0000_0001]);
+        assert_eq!(TYPES.len(), 5);
+        assert_eq!(TYPES.get(0), Some(ValueType::NullableExternref));
+        assert_eq!(TYPES.get(1), Some(ValueType::NonNullExternref));
+        assert_eq!(TYPES.get(2), Some(ValueType::Other));
+        assert_eq!(TYPES.get(4), Some(ValueType::NonNullExternref));
+        assert_eq!(TYPES.get(5), None);
+        assert_eq!(TYPES.get(usize::MAX), None);
+    }
+
+    #[test]
+    fn packed_type_builder_replaces_previous_type() {
+        const TYPES: TypeSlice<'static> = TypeSlice::builder::<1>(1)
+            .with_type(0, ValueType::NonNullExternref)
+            .with_type(0, ValueType::NullableExternref)
+            .build();
+        assert_eq!(TYPES.bytes, [2]);
+    }
+
+    #[test]
+    fn invalid_packed_types_are_rejected() {
+        for tag in [3, 4, 128] {
+            let bytes = [1, 0, 0, 0, tag];
+            let error = TypeSlice::read_from_section(&mut bytes.as_slice(), "types").unwrap_err();
+            assert!(format!("{error}").contains("invalid packed type encoding"));
+        }
+        let truncated = [5, 0, 0, 0, 0];
+        assert!(TypeSlice::read_from_section(&mut truncated.as_slice(), "types").is_err());
+        let invalid_second_byte = [5, 0, 0, 0, 0, 3];
+        assert!(
+            TypeSlice::read_from_section(&mut invalid_second_byte.as_slice(), "types").is_err()
+        );
+    }
+
+    #[test]
+    fn concatenated_signatures_preserve_type_boundaries() {
+        const IMPORT: Function = Function {
+            kind: FunctionKind::Import("test"),
+            name: "mixed",
+            types: TypeSlice::builder::<2>(5)
+                .with_type(0, ValueType::NullableExternref)
+                .with_type(3, ValueType::NonNullExternref)
+                .with_type(4, ValueType::NullableExternref)
+                .build(),
+        };
+        const EXPORT: Function = Function {
+            kind: FunctionKind::Export,
+            name: "empty",
+            types: TypeSlice::builder::<0>(0).build(),
+        };
+        const IMPORT_BYTES: [u8; IMPORT.custom_section_len()] = IMPORT.custom_section();
+        const EXPORT_BYTES: [u8; EXPORT.custom_section_len()] = EXPORT.custom_section();
+        let section = [IMPORT_BYTES.as_slice(), EXPORT_BYTES.as_slice()].concat();
+        let mut reader = section.as_slice();
+        assert_eq!(Function::read_from_section(&mut reader).unwrap(), IMPORT);
+        let export = Function::read_from_section(&mut reader).unwrap();
+        assert_eq!(export, EXPORT);
+        assert!(export.types.is_empty());
+        assert_eq!(export.types.get(0), None);
+        assert!(reader.is_empty());
+    }
+
+    #[test]
     fn function_serialization() {
         const FUNCTION: Function = Function {
             kind: FunctionKind::Import("module"),
             name: "test",
-            externrefs: BitSlice::builder::<1>(3).with_set_bit(1).build(),
+            types: TypeSlice::builder::<1>(3)
+                .with_type(1, ValueType::NonNullExternref)
+                .with_type(2, ValueType::NullableExternref)
+                .build(),
         };
 
         const SECTION: [u8; FUNCTION.custom_section_len()] = FUNCTION.custom_section();
@@ -307,8 +389,8 @@ mod tests {
         assert_eq!(SECTION[4..10], *b"module");
         assert_eq!(SECTION[10..14], [4, 0, 0, 0]); // little-endian fn name length
         assert_eq!(SECTION[14..18], *b"test");
-        assert_eq!(SECTION[18..22], [3, 0, 0, 0]); // little-endian bit slice length
-        assert_eq!(SECTION[22], 2); // bit slice
+        assert_eq!(SECTION[18..22], [3, 0, 0, 0]);
+        assert_eq!(SECTION[22], 0b0010_0100);
 
         let mut section_reader = &SECTION as &[u8];
         let restored_function = Function::read_from_section(&mut section_reader).unwrap();
@@ -320,7 +402,9 @@ mod tests {
         const FUNCTION: Function = Function {
             kind: FunctionKind::Export,
             name: "test",
-            externrefs: BitSlice::builder::<1>(3).with_set_bit(1).build(),
+            types: TypeSlice::builder::<1>(3)
+                .with_type(1, ValueType::NonNullExternref)
+                .build(),
         };
 
         const SECTION: [u8; FUNCTION.custom_section_len()] = FUNCTION.custom_section();

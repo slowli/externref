@@ -12,12 +12,13 @@ use walrus::{
     ir::{self, BinaryOp},
 };
 
-use super::{EXTERNREF, Error, Processor};
+use super::{EXTERNREF, Error, NON_NULL_EXTERNREF, Processor};
 
 #[derive(Debug)]
 pub(crate) struct ExternrefImports {
     insert: Option<FunctionId>,
     get: Option<FunctionId>,
+    get_non_null: Option<FunctionId>,
     drop: Option<FunctionId>,
     guard: Option<FunctionId>,
 }
@@ -29,6 +30,7 @@ impl ExternrefImports {
         Ok(Self {
             insert: Self::take_import(imports, "insert")?,
             get: Self::take_import(imports, "get")?,
+            get_non_null: Self::take_import(imports, "get_non_null")?,
             drop: Self::take_import(imports, "drop")?,
             guard: Self::take_import(imports, "guard")?,
         })
@@ -54,7 +56,7 @@ impl ExternrefImports {
 #[derive(Debug)]
 pub(crate) struct PatchedFunctions {
     fn_mapping: HashMap<FunctionId, FunctionId>,
-    get_ref_id: Option<FunctionId>,
+    ref_functions: HashMap<FunctionId, ValType>,
     guard_id: Option<FunctionId>,
 }
 
@@ -69,8 +71,8 @@ impl PatchedFunctions {
             module.exports.add(table_name, table_id);
         }
 
-        let mut fn_mapping = HashMap::with_capacity(3);
-        let mut get_ref_id = None;
+        let mut fn_mapping = HashMap::with_capacity(4);
+        let mut ref_functions = HashMap::new();
 
         if let Some(fn_id) = imports.insert {
             #[cfg(feature = "tracing")]
@@ -87,7 +89,17 @@ impl PatchedFunctions {
             module.funcs.delete(fn_id);
             let patched_fn_id = Self::patch_get_fn(module, table_id);
             fn_mapping.insert(fn_id, patched_fn_id);
-            get_ref_id = Some(patched_fn_id);
+            ref_functions.insert(patched_fn_id, EXTERNREF);
+        }
+
+        if let Some(fn_id) = imports.get_non_null {
+            #[cfg(feature = "tracing")]
+            tracing::debug!(name = "externref::get_non_null", "replaced import");
+
+            module.funcs.delete(fn_id);
+            let patched_fn_id = Self::patch_get_non_null_fn(module, table_id);
+            fn_mapping.insert(fn_id, patched_fn_id);
+            ref_functions.insert(patched_fn_id, NON_NULL_EXTERNREF);
         }
 
         if let Some(fn_id) = imports.drop {
@@ -104,7 +116,7 @@ impl PatchedFunctions {
 
         Self {
             fn_mapping,
-            get_ref_id,
+            ref_functions,
             guard_id: imports.guard,
         }
     }
@@ -278,8 +290,20 @@ impl PatchedFunctions {
         builder.finish(vec![idx], &mut module.funcs)
     }
 
-    pub fn get_ref_id(&self) -> Option<FunctionId> {
-        self.get_ref_id
+    fn patch_get_non_null_fn(module: &mut Module, table_id: TableId) -> FunctionId {
+        let mut builder =
+            FunctionBuilder::new(&mut module.types, &[ValType::I32], &[NON_NULL_EXTERNREF]);
+        let idx = module.locals.add(ValType::I32);
+        builder
+            .func_body()
+            .local_get(idx)
+            .table_get(table_id)
+            .ref_as_non_null();
+        builder.finish(vec![idx], &mut module.funcs)
+    }
+
+    pub fn ref_functions(&self) -> &HashMap<FunctionId, ValType> {
+        &self.ref_functions
     }
 
     pub fn replace_calls(

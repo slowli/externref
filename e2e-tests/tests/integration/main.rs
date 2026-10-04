@@ -349,7 +349,12 @@ fn assert_tracing_output(storage: &Storage) {
     let replaced_imports: HashSet<_> = replaced_imports.collect();
     assert_eq!(
         replaced_imports,
-        HashSet::from_iter(["externref::insert", "externref::get", "externref::drop"])
+        HashSet::from_iter([
+            "externref::insert",
+            "externref::get",
+            "externref::get_non_null",
+            "externref::drop",
+        ])
     );
 
     let replace_functions_span = spans.single(&name(eq("replace_functions")));

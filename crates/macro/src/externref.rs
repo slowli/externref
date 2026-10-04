@@ -193,10 +193,18 @@ impl ResourceKind {
     }
 
     fn prepare_for_import(self, arg: &Ident, cr: &Path) -> TokenStream {
-        let arg = match self {
-            Self::NonNull(_) => quote!(core::option::Option::Some(#arg)),
-            Self::Option(SimpleResourceKind::MutRef) => quote!(#arg.as_deref()),
-            Self::Option(_) => quote!(#arg),
+        if let Self::NonNull(kind) = self {
+            return match kind {
+                SimpleResourceKind::Ref | SimpleResourceKind::MutRef => {
+                    quote!(#cr::Resource::raw_non_null(#arg))
+                }
+                SimpleResourceKind::Owned => quote!(#cr::Resource::take_raw_non_null(#arg)),
+            };
+        }
+        let arg = if let Self::Option(SimpleResourceKind::MutRef) = self {
+            quote!(#arg.as_deref())
+        } else {
+            quote!(#arg)
         };
 
         match self.simple_kind() {
@@ -297,20 +305,14 @@ impl Function {
         } else {
             quote!(#cr::FunctionKind::Export)
         };
-        let externrefs = self.create_externrefs(false);
-        let has_non_null = self.resource_args.values().any(|kind| kind.is_non_null())
-            || matches!(self.return_type, ReturnType::Resource(kind) if kind.is_non_null());
-        let non_null = has_non_null.then(|| {
-            let non_null = self.create_externrefs(true);
-            quote!(, non_null = #non_null)
-        });
+        let types = self.create_types();
 
         quote! {
             #cr::declare_function!(#cr::Function {
                 kind: #kind,
                 name: #name,
-                externrefs: #externrefs,
-            } #non_null);
+                types: #types,
+            });
         }
     }
 
@@ -426,41 +428,34 @@ impl Function {
         (wrapper, new_ident)
     }
 
-    fn create_externrefs(&self, non_null: bool) -> impl ToTokens {
+    fn create_types(&self) -> impl ToTokens {
         let cr = &self.crate_path;
         let args_and_return_type_count = if matches!(self.return_type, ReturnType::Default) {
             self.arg_count
         } else {
             self.arg_count + 1
         };
-        let bytes = args_and_return_type_count.div_ceil(8);
-
-        let has_ref_return = match self.return_type {
-            ReturnType::Resource(kind) => !non_null || kind.is_non_null(),
-            _ => false,
-        };
-        let maybe_ret_idx = if has_ref_return {
-            Some(self.arg_count)
-        } else {
-            None
+        let bytes = args_and_return_type_count.div_ceil(4);
+        let return_type = match self.return_type {
+            ReturnType::Resource(kind) => Some((self.arg_count, kind)),
+            _ => None,
         };
 
-        let set_bits = self
-            .resource_args
-            .iter()
-            .filter_map(|(&idx, kind)| (!non_null || kind.is_non_null()).then_some(idx));
-        #[cfg(test)] // sort keys in deterministic order for testing
-        let set_bits = {
-            let mut sorted: Vec<_> = set_bits.collect();
-            sorted.sort_unstable();
-            sorted.into_iter()
-        };
-        let set_bits = set_bits.chain(maybe_ret_idx);
-        let set_bits = set_bits.map(|idx| quote!(.with_set_bit(#idx)));
+        let types = (0..self.arg_count)
+            .filter_map(|idx| self.resource_args.get(&idx).map(|&kind| (idx, kind)))
+            .chain(return_type)
+            .map(|(idx, kind)| {
+                let ty = if kind.is_non_null() {
+                    quote!(#cr::ValueType::NonNullExternref)
+                } else {
+                    quote!(#cr::ValueType::NullableExternref)
+                };
+                quote!(.with_type(#idx, #ty))
+            });
 
         quote! {
-            #cr::BitSlice::builder::<#bytes>(#args_and_return_type_count)
-                #(#set_bits)*
+            #cr::TypeSlice::builder::<#bytes>(#args_and_return_type_count)
+                #(#types)*
                 .build()
         }
     }
@@ -689,15 +684,12 @@ mod tests {
             externref::declare_function!(externref::Function {
                 kind: externref::FunctionKind::Export,
                 name: "test_export",
-                externrefs: externref::BitSlice::builder::<1usize>(4usize)
-                    .with_set_bit(0usize)
-                    .with_set_bit(1usize)
-                    .with_set_bit(3usize)
+                types: externref::TypeSlice::builder::<1usize>(4usize)
+                    .with_type(0usize, externref::ValueType::NonNullExternref)
+                    .with_type(1usize, externref::ValueType::NullableExternref)
+                    .with_type(3usize, externref::ValueType::NonNullExternref)
                     .build(),
-            }, non_null = externref::BitSlice::builder::<1usize>(4usize)
-                .with_set_bit(0usize)
-                .with_set_bit(3usize)
-                .build());
+            });
         };
         assert_eq!(declaration, expected, "{}", quote!(#declaration));
     }
@@ -769,17 +761,18 @@ mod tests {
                 let parsed =
                     Function::from_sig(&mut signature, None, &ExternrefAttrs::default(), None)
                         .unwrap();
-                let metadata = parsed.create_externrefs(true);
+                let metadata = parsed.create_types();
                 let metadata: Expr = syn::parse_quote!(#metadata);
-                let expected: Expr = if optional {
-                    syn::parse_quote!(externref::BitSlice::builder::<1usize>(2usize).build())
+                let ty: Expr = if optional {
+                    syn::parse_quote!(externref::ValueType::NullableExternref)
                 } else {
-                    syn::parse_quote! {
-                        externref::BitSlice::builder::<1usize>(2usize)
-                            .with_set_bit(0usize)
-                            .with_set_bit(1usize)
-                            .build()
-                    }
+                    syn::parse_quote!(externref::ValueType::NonNullExternref)
+                };
+                let expected: Expr = syn::parse_quote! {
+                    externref::TypeSlice::builder::<1usize>(2usize)
+                        .with_type(0usize, #ty)
+                        .with_type(1usize, #ty)
+                        .build()
                 };
                 assert_eq!(metadata, expected, "{}", quote!(#signature));
             }
@@ -806,14 +799,11 @@ mod tests {
             externref::declare_function!(externref::Function {
                 kind: externref::FunctionKind::Export,
                 name: "test_export",
-                externrefs: externref::BitSlice::builder::<1usize>(3usize)
-                    .with_set_bit(0usize)
-                    .with_set_bit(1usize)
+                types: externref::TypeSlice::builder::<1usize>(3usize)
+                    .with_type(0usize, externref::ValueType::NonNullExternref)
+                    .with_type(1usize, externref::ValueType::NonNullExternref)
                     .build(),
-            }, non_null = externref::BitSlice::builder::<1usize>(3usize)
-                .with_set_bit(0usize)
-                .with_set_bit(1usize)
-                .build());
+            });
         };
         assert_eq!(declaration, expected, "{}", quote!(#declaration));
     }
@@ -925,7 +915,7 @@ mod tests {
             ) -> Resource<Bytes> {
                 unsafe { externref::ExternRef::guard(); }
                 let __output = __externref_send_message(
-                    externref::Resource::raw(core::option::Option::Some(__arg0)),
+                    externref::Resource::raw_non_null(__arg0),
                     __arg1,
                     __arg2,
                 );
