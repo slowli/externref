@@ -14,6 +14,10 @@ The project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html)
 
 - **Breaking:** Derive WASM nullability from Rust types. `Resource`, `ResourceCopy` and
   their references now use `(ref extern)`; `Option` forms use `(ref null extern)`.
+- Encode ordinary values and both reference types in a single two-bit signature section.
+  WASM modules must be rebuilt with a matching macro and processor.
+- Transform reference nullability in place, preserving typed locals and using typed table
+  lookups instead of generating import/export adapter functions.
 
 ### Fixed
 

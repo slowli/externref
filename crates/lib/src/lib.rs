@@ -55,16 +55,18 @@
 //! with `usize`s and a wrapper function is added that performs the necessary transform
 //! from / to `usize`.
 //! Additionally, function signature metadata records where resources are located
-//! and which arguments or results are non-null.
+//! and which arguments or results are non-null. A single `__externrefs` custom section
+//! stores these types using two bits per argument or result.
 //!
 //! To handle `usize` (~`i32` in WASM) <-> `externref` conversions, managing resources is performed
-//! using 3 function imports from a surrogate module:
+//! using function imports from a surrogate module:
 //!
 //! - Creating a `Resource` ("real" signature `fn(externref) -> usize`) stores a reference
 //!   into an `externref` table and returns the table index. The index is what is actually
 //!   stored within the `Resource`, meaning that `Resource`s can be easily placed on heap.
 //! - Getting a reference from a `Resource` ("real" signature `fn(usize) -> externref`)
-//!   is an indexing operation for the `externref` table.
+//!   is an indexing operation for the `externref` table. Non-optional resources use
+//!   a separate typed lookup returning `(ref extern)`, with a `ref.as_non_null` check.
 //! - [`Register::drop()`] ("real" signature `fn(usize)`) removes the reference from the table.
 //!
 //! Real `externref`s are patched back to the imported / exported functions
@@ -77,8 +79,8 @@
 //!   among its existing elements first, and only grow the table if all existing table elements are
 //!   occupied.
 //! - Patching changes function types, and as a result types of some locals.
-//!   This is OK because the post-processor also changes the signatures of affected
-//!   imported / exported functions. The success relies on the fact that
+//!   The processor uses the recorded nullability for both, without adding adapter functions
+//!   around imports or exports. The success relies on the fact that
 //!   a reference is only stored *immediately* after receiving it from the host;
 //!   likewise, a reference is only obtained *immediately* before passing it to the host.
 //!   `Resource`s can be dropped anywhere, but the corresponding `externref` removal function
@@ -185,7 +187,7 @@ pub use crate::{
     error::{ReadError, ReadErrorKind},
     guard::{DropGuard, Forget, Register},
     resource::{Resource, ResourceCopy},
-    signature::{BitSlice, BitSliceBuilder, Function, FunctionKind},
+    signature::{Function, FunctionKind, TypeSlice, TypeSliceBuilder, ValueType},
     surrogate::ExternRef,
 };
 
