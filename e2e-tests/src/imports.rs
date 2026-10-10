@@ -11,7 +11,22 @@ unsafe extern "C" {
         message_len: usize,
     ) -> Resource<Bytes>;
 
+    pub(crate) fn send_message_non_null(
+        sender: &mut Resource<Sender>,
+        message_ptr: *const u8,
+        message_len: usize,
+    ) -> Resource<Bytes>;
+
     pub(crate) fn message_len(bytes: Option<&Resource<Bytes>>) -> usize;
+
+    pub(crate) fn round_trip(
+        value: Resource<Sender>,
+        reference: &Resource<Sender>,
+        mut_reference: &mut Resource<Sender>,
+        optional_value: Option<Resource<Sender>>,
+        optional_reference: Option<&Resource<Sender>>,
+        optional_mut_reference: Option<&mut Resource<Sender>>,
+    ) -> Option<Resource<Sender>>;
 
     /// Inspects the pointer to the `Resource` rather than using the resource itself.
     /// This is unusual but valid resource usage.
@@ -39,3 +54,9 @@ unsafe extern "C" {
     pub(crate) fn inspect_message(#[resource = false] bytes: MessageCopy);
 }
 // ANCHOR_END: imports_copy
+
+#[externref::externref(stubs)]
+#[link(wasm_import_module = "wasm:js-string")]
+unsafe extern "C" {
+    pub(crate) fn cast(value: Option<&Resource<()>>) -> Resource<()>;
+}

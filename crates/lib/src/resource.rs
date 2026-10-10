@@ -264,6 +264,27 @@ impl<T, D: DropGuard> Resource<T, D> {
             })
         }
     }
+
+    /// Obtains a non-null `externref` from this resource.
+    ///
+    /// # Safety
+    ///
+    /// The same requirements as for [`Self::raw()`] apply.
+    #[inline(always)]
+    pub unsafe fn raw_non_null(this: &Self) -> ExternRef {
+        unsafe { imports::get_non_null_externref(this.drop_guard.as_id()) }
+    }
+
+    /// Obtains a non-null `externref` before dropping this resource.
+    ///
+    /// # Safety
+    ///
+    /// The same requirements as for [`Self::raw()`] apply.
+    #[inline(always)]
+    #[allow(clippy::needless_pass_by_value)]
+    pub unsafe fn take_raw_non_null(this: Self) -> ExternRef {
+        unsafe { Self::raw_non_null(&this) }
+    }
 }
 
 impl<T, D: DropGuard> Resource<T, D> {
