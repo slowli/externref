@@ -369,7 +369,7 @@ mod tests {
         assert_eq!(export, EXPORT);
         assert!(export.types.is_empty());
         assert_eq!(export.types.get(0), None);
-        assert!(reader.is_empty());
+        assert_eq!(reader, []);
     }
 
     #[test]
