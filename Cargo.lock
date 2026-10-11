@@ -686,6 +686,7 @@ dependencies = [
  "assert_matches",
  "dlmalloc",
  "externref",
+ "gimli 0.32.3",
  "hashbrown 0.17.1",
  "predicates",
  "tempfile",
@@ -693,7 +694,10 @@ dependencies = [
  "tracing",
  "tracing-capture",
  "tracing-subscriber",
+ "walrus",
+ "wasmparser 0.245.1",
  "wasmtime",
+ "wat",
 ]
 
 [[package]]

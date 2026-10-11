@@ -148,6 +148,10 @@ pub(crate) struct CompiledModule {
 }
 
 impl CompiledModule {
+    pub(crate) fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
     pub(crate) fn process(&self) -> Vec<u8> {
         let processed_module = Processor::default()
             .set_drop_fn("test", "drop_ref")

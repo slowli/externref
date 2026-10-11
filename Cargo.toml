@@ -20,6 +20,7 @@ assert_matches = "1.5.0"
 clap = { version = "4.6.2", features = ["derive", "wrap_help"] }
 dlmalloc = "0.2.14"
 doc-comment = "0.3.4"
+gimli = "0.32.3"
 hashbrown = "0.17.1"
 predicates = { version = "3.1.4", default-features = false }
 proc-macro2 = "1.0"
@@ -35,6 +36,7 @@ tracing-subscriber = "0.3.23"
 trybuild = "1.0.116"
 version-sync = "0.9.4"
 walrus = "0.27.2"
+wasmparser = "0.245.1"
 wasmtime = "50.0.0"
 wat = "1.253.0"
 
@@ -59,7 +61,3 @@ inherits = "release"
 strip = true
 codegen-units = 1
 lto = true
-
-# Required to properly inline surrogate `externref`s (see "Limitations" in the crate docs)
-[profile.dev.package.externref-test]
-debug = 1

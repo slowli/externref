@@ -1,17 +1,21 @@
 //! End-to-end tests for the `externref` macro / processor.
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     sync::{LazyLock, Once},
 };
 
 use assert_matches::assert_matches;
+use externref::{
+    Function as ReferenceFunction, FunctionKind, TypeSlice, ValueType, processor::Processor,
+};
 use test_casing::{Product, test_casing};
 use tracing::{Level, Subscriber, subscriber::DefaultGuard};
 use tracing_capture::{CaptureLayer, SharedStorage, Storage};
 use tracing_subscriber::{
     FmtSubscriber, fmt::format::FmtSpan, layer::SubscriberExt, registry::LookupSpan,
 };
+use wasmparser::{Operator, Parser, Payload, TypeRef};
 use wasmtime::{
     AsContextMut, Caller, Engine, Extern, ExternRef, Instance, Linker, Module, OwnedRooted, Ref,
     Rooted, Store, Table, error::Context as _,
@@ -20,6 +24,259 @@ use wasmtime::{
 use crate::compile::{CompilationProfile, CompiledModule};
 
 mod compile;
+
+fn process_fixture(source: &str, metadata: &[u8]) -> Module {
+    let bytes = wat::parse_str(source).unwrap();
+    let mut module = walrus::Module::from_buffer(&bytes).unwrap();
+    module.customs.add(walrus::RawCustomSection {
+        name: ReferenceFunction::CUSTOM_SECTION_NAME.to_owned(),
+        data: metadata.to_vec(),
+    });
+    let processed = Processor::default()
+        .set_drop_fn("test", "drop_ref")
+        .process_bytes(&module.emit_wasm())
+        .unwrap();
+    Module::new(&Engine::default(), processed).unwrap()
+}
+
+#[test]
+fn shadow_stack_spills_preserve_reference_and_drop() {
+    const NULLABLE: ReferenceFunction<'static> = ReferenceFunction {
+        kind: FunctionKind::Export,
+        name: "test",
+        types: TypeSlice::builder::<1>(1)
+            .with_type(0, ValueType::NullableExternref)
+            .build(),
+    };
+    const NON_NULL: ReferenceFunction<'static> = ReferenceFunction {
+        types: TypeSlice::builder::<1>(1)
+            .with_type(0, ValueType::NonNullExternref)
+            .build(),
+        ..NULLABLE
+    };
+    const NULLABLE_BYTES: [u8; NULLABLE.custom_section_len()] = NULLABLE.custom_section();
+    const NON_NULL_BYTES: [u8; NON_NULL.custom_section_len()] = NON_NULL.custom_section();
+    let source = include_str!("../../../crates/lib/tests/modules/shadow-stack.wast");
+    for (metadata, non_null) in [
+        (NULLABLE_BYTES.as_slice(), false),
+        (NON_NULL_BYTES.as_slice(), true),
+    ] {
+        let module = process_fixture(source, metadata);
+        let linker = create_linker(module.engine());
+        let mut store = Store::new(module.engine(), Data::new(vec![]));
+        let instance = linker.instantiate(&mut store, &module).unwrap();
+        let resource = ExternRef::new(&mut store, Box::<str>::from("spill")).unwrap();
+        if non_null {
+            instance
+                .get_typed_func::<Rooted<ExternRef>, ()>(&mut store, "test")
+                .unwrap()
+                .call(&mut store, resource)
+                .unwrap();
+        } else {
+            instance
+                .get_typed_func::<Option<Rooted<ExternRef>>, ()>(&mut store, "test")
+                .unwrap()
+                .call(&mut store, Some(resource))
+                .unwrap();
+        }
+        assert_eq!(store.data().dropped.len(), 1);
+        store.data().assert_drops(&store, &["spill"].into());
+        let table = instance.get_table(&mut store, "externrefs").unwrap();
+        assert_eq!(table.size(&store), 1);
+        assert_matches!(table.get(&mut store, 0).unwrap(), Ref::Extern(None));
+    }
+}
+
+#[test]
+fn conditional_spills_use_the_selected_reference() {
+    const CHOOSE: ReferenceFunction<'static> = ReferenceFunction {
+        kind: FunctionKind::Export,
+        name: "choose",
+        types: TypeSlice::builder::<1>(4)
+            .with_type(0, ValueType::NonNullExternref)
+            .with_type(1, ValueType::NonNullExternref)
+            .with_type(3, ValueType::NonNullExternref)
+            .build(),
+    };
+    const BYTES: [u8; CHOOSE.custom_section_len()] = CHOOSE.custom_section();
+    let module = process_fixture(
+        r#"
+        (module
+            (import "externref" "guard" (func $guard))
+            (global $__stack_pointer (mut i32) (i32.const 32768))
+            (memory 1)
+            (func (export "choose") (param $left i32) (param $right i32) (param $condition i32) (result i32)
+                (local $frame i32) (local $result i32)
+                (global.set $__stack_pointer (local.tee $frame
+                    (i32.sub (global.get $__stack_pointer) (i32.const 16))))
+                (call $guard)
+                (if (local.get $condition)
+                    (then (i32.store offset=8 (local.get $frame) (local.get $left)))
+                    (else (i32.store offset=8 (local.get $frame) (local.get $right))))
+                (local.set $result (i32.load offset=8 (local.get $frame)))
+                (global.set $__stack_pointer (i32.add (local.get $frame) (i32.const 16)))
+                (local.get $result))
+        )
+    "#,
+        &BYTES,
+    );
+    let linker = create_linker(module.engine());
+    let mut store = Store::new(module.engine(), Data::new(vec![]));
+    let instance = linker.instantiate(&mut store, &module).unwrap();
+    let choose = instance
+        .get_typed_func::<(Rooted<ExternRef>, Rooted<ExternRef>, u32), Rooted<ExternRef>>(
+            &mut store, "choose",
+        )
+        .unwrap();
+    let left = ExternRef::new(&mut store, "left").unwrap();
+    let right = ExternRef::new(&mut store, "right").unwrap();
+    for (condition, expected) in [(0, "right"), (1, "left")] {
+        let returned = choose.call(&mut store, (left, right, condition)).unwrap();
+        assert_eq!(
+            *returned
+                .data(&store)
+                .unwrap()
+                .unwrap()
+                .downcast_ref::<&str>()
+                .unwrap(),
+            expected
+        );
+    }
+}
+
+fn export_stores(bytes: &[u8], export_name: &str) -> Vec<(u64, u64)> {
+    let mut exported_function = None;
+    let mut function_index = 0;
+    let mut code_start = 0;
+    for payload in Parser::new(0).parse_all(bytes) {
+        match payload.unwrap() {
+            Payload::ExportSection(exports) => {
+                exported_function = exports
+                    .into_iter()
+                    .map(Result::unwrap)
+                    .find(|export| export.name == export_name)
+                    .map(|export| export.index);
+            }
+            Payload::ImportSection(imports) => {
+                function_index += imports
+                    .into_imports()
+                    .map(Result::unwrap)
+                    .filter(|import| matches!(import.ty, TypeRef::Func(_) | TypeRef::FuncExact(_)))
+                    .count() as u32;
+            }
+            Payload::CodeSectionStart { range, .. } => code_start = range.start,
+            Payload::CodeSectionEntry(body) => {
+                if Some(function_index) == exported_function {
+                    return body
+                        .get_operators_reader()
+                        .unwrap()
+                        .into_iter_with_offsets()
+                        .map(Result::unwrap)
+                        .filter_map(|(operator, address)| match operator {
+                            Operator::I32Store { memarg } => {
+                                Some((memarg.offset, (address - code_start) as u64))
+                            }
+                            _ => None,
+                        })
+                        .collect();
+                }
+                function_index += 1;
+            }
+            _ => {}
+        }
+    }
+    panic!("missing export {export_name}");
+}
+
+fn dwarf_lines(bytes: &[u8]) -> Vec<(u64, u64, (String, u64))> {
+    let sections: HashMap<_, _> = Parser::new(0)
+        .parse_all(bytes)
+        .filter_map(|payload| match payload.unwrap() {
+            Payload::CustomSection(section) => Some((section.name(), section.data())),
+            _ => None,
+        })
+        .collect();
+    for name in [".debug_info", ".debug_line", ".debug_abbrev"] {
+        assert!(
+            !sections
+                .get(name)
+                .expect("missing DWARF section")
+                .is_empty()
+        );
+    }
+    let dwarf = gimli::Dwarf::load(|id| {
+        Ok::<_, gimli::Error>(gimli::EndianSlice::new(
+            sections.get(id.name()).copied().unwrap_or(&[]),
+            gimli::LittleEndian,
+        ))
+    })
+    .unwrap();
+    let mut lines = vec![];
+    let mut units = dwarf.units();
+    while let Some(header) = units.next().unwrap() {
+        let unit = dwarf.unit(header).unwrap();
+        let Some(program) = unit.line_program.clone() else {
+            continue;
+        };
+        let mut rows = program.rows();
+        let mut previous = None;
+        while let Some((header, row)) = rows.next_row().unwrap() {
+            if let Some((start, source)) = previous.take() {
+                if start < row.address() {
+                    lines.push((start, row.address(), source));
+                }
+            }
+            if !row.end_sequence() {
+                if let Some(line) = row.line() {
+                    let file = row.file(header).unwrap();
+                    let file = dwarf
+                        .attr_string(&unit, file.path_name())
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned();
+                    previous = Some((row.address(), (file, line.get())));
+                }
+            }
+        }
+    }
+    lines
+}
+
+#[test]
+fn rust_dwarf_lines_are_preserved() {
+    let compiled = compile_module(CompilationProfile::Debug);
+    let input = compiled.bytes();
+    let processed = compiled.process();
+    let original_lines = dwarf_lines(input);
+    let processed_lines = dwarf_lines(&processed);
+    let mut checked = 0;
+    let mut moved = false;
+    for export in ["test_export", "test_non_null", "test_resource_types"] {
+        let original_stores = export_stores(input, export);
+        let processed_stores = export_stores(&processed, export);
+        assert_eq!(original_stores.len(), processed_stores.len());
+        for ((offset, address), (new_offset, new_address)) in
+            original_stores.into_iter().zip(processed_stores)
+        {
+            assert_eq!(offset, new_offset);
+            let Some((_, _, source)) = original_lines
+                .iter()
+                .find(|(start, end, _)| *start <= address && address < *end)
+            else {
+                continue;
+            };
+            let new_source = processed_lines
+                .iter()
+                .find(|(start, end, _)| *start <= new_address && new_address < *end)
+                .map(|(_, _, source)| source);
+            assert_eq!(new_source, Some(source), "{export}: store at {offset}");
+            moved |= address != new_address;
+            checked += 1;
+        }
+    }
+    assert!(checked >= 20, "only checked {checked} source locations");
+    assert!(moved, "fixture did not exercise address relocation");
+}
 
 type RefAssertion = fn(Caller<'_, Data>, &Table);
 

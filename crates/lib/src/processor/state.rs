@@ -13,6 +13,7 @@ use walrus::{
 use super::{
     EXTERNREF, Error, Location, NON_NULL_EXTERNREF, Processor,
     functions::{ExternrefImports, PatchedFunctions, get_offset},
+    spills::ReferenceSpills,
 };
 use crate::{Function, FunctionKind, ValueType};
 
@@ -78,7 +79,7 @@ impl ProcessingState {
         let functions_by_id: HashMap<_, _> = functions_by_id.collect();
 
         let local_fn_ids: Vec<_> = module.funcs.iter_local().map(|(id, _)| id).collect();
-        for fn_id in local_fn_ids {
+        for &fn_id in &local_fn_ids {
             if let Some(function) = functions_by_id.get(&fn_id) {
                 Self::transform_export(module, &functions_returning_ref, fn_id, function)?;
             } else {
@@ -86,6 +87,13 @@ impl ProcessingState {
                 Self::transform_local_fn(module, &functions_returning_ref, can_have_locals, fn_id)?;
             }
         }
+
+        ReferenceSpills::process(
+            module,
+            local_fn_ids
+                .into_iter()
+                .filter(|fn_id| functions_by_id.contains_key(fn_id) || guarded_fns.contains(fn_id)),
+        )?;
 
         Ok(())
     }

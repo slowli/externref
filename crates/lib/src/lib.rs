@@ -93,11 +93,20 @@
 //!
 //! With debug info enabled, surrogate `usize`s may be spilled onto the shadow stack (part
 //! of the WASM linear memory used by `rustc` / LLVM when the main WASM stack is insufficient).
-//! This makes replacing these surrogates with `externref`s much harder (essentially, it'd require symbolic execution
-//! of the affected function to find out which locals should be replaced with `externref`s). This behavior should be detected
-//! by the [processor], leading to "incorrectly placed externref guard" errors. Currently,
-//! the only workaround is to [set debug info level](https://doc.rust-lang.org/cargo/reference/profiles.html#debug)
-//! to `limited` or below for the compiled WASM module.
+//! The processor promotes fixed-offset, private stack-frame spills to reference locals,
+//! including copies and reloads. Full Rust debug info is supported for these spills;
+//! it is not necessary to reduce debug info to `limited`.
+//!
+//! References still cannot be stored in arbitrary linear memory. Escaping spill addresses,
+//! overlapping reference accesses and ambiguous spill types are unsupported and produce
+//! [`processor::Error::UnsupportedReferenceSpill`]. Linear-memory copies of promoted references
+//! contain placeholders, not usable reference values or resource indices. DWARF variable
+//! locations referring to these memory copies are not rewritten.
+//!
+//! [`processor::Processor::process_bytes()`] preserves DWARF sections and updates code addresses.
+//! This uses Walrus's experimental DWARF support; some DWARF 5 line programs
+//! are not supported. Verify source locations with the debugger
+//! and toolchain used for the module.
 //!
 //! # Crate features
 //!
