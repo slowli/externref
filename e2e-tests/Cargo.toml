@@ -21,7 +21,7 @@ anyhow.workspace = true
 assert_matches.workspace = true
 predicates.workspace = true
 tempfile.workspace = true
-test-casing.workspace = true
+test-casing = { workspace = true, features = ["tracing"] }
 tracing.workspace = true
 tracing-capture.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }

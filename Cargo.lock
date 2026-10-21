@@ -1965,6 +1965,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d058c299f55101cd3a8abb6cec8eaf4f047fe36346668fffe1ed65b6572060ec"
 dependencies = [
  "test-casing-macro",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
