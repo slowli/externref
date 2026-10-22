@@ -12,12 +12,13 @@ use walrus::{
     ir::{self, BinaryOp},
 };
 
-use super::{EXTERNREF, Error, Processor};
+use super::{EXTERNREF, Error, NON_NULL_EXTERNREF, Processor};
 
 #[derive(Debug)]
 pub(crate) struct ExternrefImports {
     insert: Option<FunctionId>,
     get: Option<FunctionId>,
+    get_non_null: Option<FunctionId>,
     drop: Option<FunctionId>,
     guard: Option<FunctionId>,
 }
@@ -29,6 +30,7 @@ impl ExternrefImports {
         Ok(Self {
             insert: Self::take_import(imports, "insert")?,
             get: Self::take_import(imports, "get")?,
+            get_non_null: Self::take_import(imports, "get_non_null")?,
             drop: Self::take_import(imports, "drop")?,
             guard: Self::take_import(imports, "guard")?,
         })
@@ -54,7 +56,7 @@ impl ExternrefImports {
 #[derive(Debug)]
 pub(crate) struct PatchedFunctions {
     fn_mapping: HashMap<FunctionId, FunctionId>,
-    get_ref_id: Option<FunctionId>,
+    ref_functions: HashMap<FunctionId, ValType>,
     guard_id: Option<FunctionId>,
 }
 
@@ -69,8 +71,8 @@ impl PatchedFunctions {
             module.exports.add(table_name, table_id);
         }
 
-        let mut fn_mapping = HashMap::with_capacity(3);
-        let mut get_ref_id = None;
+        let mut fn_mapping = HashMap::with_capacity(4);
+        let mut ref_functions = HashMap::new();
 
         if let Some(fn_id) = imports.insert {
             #[cfg(feature = "tracing")]
@@ -87,7 +89,17 @@ impl PatchedFunctions {
             module.funcs.delete(fn_id);
             let patched_fn_id = Self::patch_get_fn(module, table_id);
             fn_mapping.insert(fn_id, patched_fn_id);
-            get_ref_id = Some(patched_fn_id);
+            ref_functions.insert(patched_fn_id, EXTERNREF);
+        }
+
+        if let Some(fn_id) = imports.get_non_null {
+            #[cfg(feature = "tracing")]
+            tracing::debug!(name = "externref::get_non_null", "replaced import");
+
+            module.funcs.delete(fn_id);
+            let patched_fn_id = Self::patch_get_non_null_fn(module, table_id);
+            fn_mapping.insert(fn_id, patched_fn_id);
+            ref_functions.insert(patched_fn_id, NON_NULL_EXTERNREF);
         }
 
         if let Some(fn_id) = imports.drop {
@@ -104,7 +116,7 @@ impl PatchedFunctions {
 
         Self {
             fn_mapping,
-            get_ref_id,
+            ref_functions,
             guard_id: imports.guard,
         }
     }
@@ -278,8 +290,20 @@ impl PatchedFunctions {
         builder.finish(vec![idx], &mut module.funcs)
     }
 
-    pub fn get_ref_id(&self) -> Option<FunctionId> {
-        self.get_ref_id
+    fn patch_get_non_null_fn(module: &mut Module, table_id: TableId) -> FunctionId {
+        let mut builder =
+            FunctionBuilder::new(&mut module.types, &[ValType::I32], &[NON_NULL_EXTERNREF]);
+        let idx = module.locals.add(ValType::I32);
+        builder
+            .func_body()
+            .local_get(idx)
+            .table_get(table_id)
+            .ref_as_non_null();
+        builder.finish(vec![idx], &mut module.funcs)
+    }
+
+    pub fn ref_functions(&self) -> &HashMap<FunctionId, ValType> {
+        &self.ref_functions
     }
 
     pub fn replace_calls(
@@ -374,11 +398,11 @@ impl ir::VisitorMut for GuardRemover {
     fn start_instr_seq_mut(&mut self, instr_seq: &mut ir::InstrSeq) {
         let is_entry_seq = instr_seq.id() == self.entry_seq_id;
         let mut idx = 0;
-        let mut maybe_set_stack_ptr = false;
+        let mut in_stack_prologue = false;
         instr_seq.instrs.retain(|(instr, location)| {
             let placement = if let ir::Instr::Call(call) = instr {
                 if call.func == self.guard_id {
-                    Some(if is_entry_seq && (idx == 0 || maybe_set_stack_ptr) {
+                    Some(if is_entry_seq && (idx == 0 || in_stack_prologue) {
                         GuardPlacement::Correct
                     } else {
                         GuardPlacement::Incorrect(get_offset(*location))
@@ -394,7 +418,16 @@ impl ir::VisitorMut for GuardRemover {
                 self.add_placement(placement);
             }
             idx += 1;
-            maybe_set_stack_ptr = matches!(instr, ir::Instr::GlobalSet(_));
+            in_stack_prologue = matches!(instr, ir::Instr::GlobalSet(_))
+                || (in_stack_prologue
+                    && matches!(
+                        instr,
+                        ir::Instr::LocalGet(_)
+                            | ir::Instr::LocalSet(_)
+                            | ir::Instr::LocalTee(_)
+                            | ir::Instr::Load(_)
+                            | ir::Instr::Store(_)
+                    ));
             placement.is_none()
         });
     }
@@ -510,6 +543,68 @@ mod tests {
         let fns = PatchedFunctions::new(&mut module, &imports, &Processor::default());
         let (_, guarded_fns) = fns.replace_calls(&mut module).unwrap();
         assert_eq!(guarded_fns.len(), 1);
+    }
+
+    #[test]
+    fn guarded_function_spilling_args_to_stack() {
+        const MODULE_BYTES: &[u8] = br#"
+            (module
+                (import "externref" "guard" (func $guard))
+                (global $__stack_pointer (mut i32) (i32.const 32768))
+                (memory 1)
+
+                (func (param $resource i32)
+                    (local $frame i32)
+                    (global.set $__stack_pointer
+                        (local.tee $frame
+                            (i32.sub (global.get $__stack_pointer) (i32.const 32))
+                        )
+                    )
+                    (i32.store offset=16 (local.get $frame) (local.get $resource))
+                    (i32.store offset=12
+                        (local.get $frame)
+                        (i32.load offset=16 (local.get $frame))
+                    )
+                    (call $guard)
+                    (drop (local.get $resource))
+                )
+            )
+        "#;
+
+        let bytes = wat::parse_bytes(MODULE_BYTES).unwrap();
+        let mut module = Module::from_buffer(&bytes).unwrap();
+        let imports = ExternrefImports::new(&mut module.imports).unwrap();
+        let functions = PatchedFunctions::new(&mut module, &imports, &Processor::default());
+        let (_, guarded_fns) = functions.replace_calls(&mut module).unwrap();
+        assert_eq!(guarded_fns.len(), 1);
+    }
+
+    #[test]
+    fn call_before_guard_ends_stack_prologue() {
+        const MODULE_BYTES: &[u8] = br#"
+            (module
+                (import "externref" "guard" (func $guard))
+                (import "test" "callback" (func $callback))
+                (global $__stack_pointer (mut i32) (i32.const 32768))
+
+                (func $test
+                    (global.set $__stack_pointer
+                        (i32.sub (global.get $__stack_pointer) (i32.const 16))
+                    )
+                    (call $callback)
+                    (call $guard)
+                )
+            )
+        "#;
+
+        let bytes = wat::parse_bytes(MODULE_BYTES).unwrap();
+        let mut module = Module::from_buffer(&bytes).unwrap();
+        let imports = ExternrefImports::new(&mut module.imports).unwrap();
+        let functions = PatchedFunctions::new(&mut module, &imports, &Processor::default());
+        assert_matches!(
+            functions.replace_calls(&mut module),
+            Err(Error::IncorrectGuard { function_name: Some(name), .. }) if name == "test"
+        );
     }
 
     #[test]

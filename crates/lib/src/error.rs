@@ -12,6 +12,8 @@ pub enum ReadErrorKind {
     UnexpectedEof,
     /// Error parsing
     Utf8(Utf8Error),
+    /// An invalid two-bit type tag or nonzero padding bits in a type slice.
+    InvalidTypeEncoding,
 }
 
 impl fmt::Display for ReadErrorKind {
@@ -19,6 +21,7 @@ impl fmt::Display for ReadErrorKind {
         match self {
             Self::UnexpectedEof => formatter.write_str("reached end of input"),
             Self::Utf8(err) => write!(formatter, "{err}"),
+            Self::InvalidTypeEncoding => formatter.write_str("invalid packed type encoding"),
         }
     }
 }
@@ -53,7 +56,7 @@ impl std::error::Error for ReadError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match &self.kind {
             ReadErrorKind::Utf8(err) => Some(err),
-            ReadErrorKind::UnexpectedEof => None,
+            ReadErrorKind::UnexpectedEof | ReadErrorKind::InvalidTypeEncoding => None,
         }
     }
 }
