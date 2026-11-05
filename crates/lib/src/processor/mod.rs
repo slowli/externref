@@ -11,7 +11,8 @@
 //! - Replace imported functions from a surrogate module for handling `externref`s with
 //!   local functions.
 //! - Patch signatures and implementations of imported / exported functions so that they
-//!   use `externref`s where appropriate.
+//!   use nullable or non-null `externref`s according to the recorded types. Local variables
+//!   preserve the nullability of arguments and call results in the same transformation.
 //! - Add an initially empty, unconstrained table with `externref` elements and optionally
 //!   export it from the module. The host can use the table to inspect currently used references
 //!   (e.g., to save / restore WASM instance state).
@@ -30,6 +31,8 @@
 //! Optimizing WASM after the processor has an additional advantage in that it can
 //! optimize the changes produced by it (optimization is hard, and is best left
 //! to the dedicated tools).
+//! When non-null references are used, pass `--enable-gc` to Binaryen to prevent it from
+//! lowering non-null signatures back to nullable ones.
 //!
 //! # Examples
 //!
@@ -58,6 +61,11 @@ mod state;
 
 /// Externref type as a constant.
 const EXTERNREF: ValType = ValType::Ref(RefType::EXTERNREF);
+
+const NON_NULL_EXTERNREF: ValType = ValType::Ref(RefType {
+    nullable: false,
+    ..RefType::EXTERNREF
+});
 
 /// WASM module processor encapsulating processing options.
 #[derive(Debug)]
