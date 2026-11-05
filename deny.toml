@@ -8,6 +8,7 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "deny"
 ignore = [
   "RUSTSEC-2017-0008", # `serial` crate is unmaintained; used by `portable-pty` via `term-transcript`
+  "RUSTSEC-2026-0441", # `pin-utils` is unmaintained; used by `portable-pty`
 ]
 
 [licenses]
