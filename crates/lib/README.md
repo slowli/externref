@@ -105,17 +105,17 @@ modules when upgrading. The WASM engine must support non-null reference types. W
 with Binaryen, enable GC support with `wasm-opt --enable-gc`; otherwise, it can lower
 non-null signatures to nullable ones and invalidate builtin imports.
 
-### Limitations
+### Debug Information
 
-If you compile WASM without compilation optimizations, you might get "incorrectly placed externref guard" errors during WASM processing.
-Currently, the only workaround is to switch off some debug info for the compiled WASM module, e.g. using a workspace manifest:
+`Processor::process_bytes()` and the CLI preserve DWARF sections and update code addresses.
+When calling `Processor::process()` directly, parse the input module with
+`walrus::ModuleConfig::new().generate_dwarf(true)` to retain DWARF.
 
-```toml,no_sync
-[profile.dev.package.your-wasm-module]
-debug = 1 # or "limited" if you're targeting MSRV 1.71+
-```
-
-These errors shouldn't occur if WASM is compiled in the release mode.
+Walrus's DWARF writer is experimental. Some DWARF 5 line programs are not supported;
+verify source locations in the debugger used for your module.
+DWARF variable locations for promoted
+reference spills are not rewritten: their linear-memory copies contain placeholders rather
+than references or resource indices.
 
 ### Examples
 

@@ -57,6 +57,7 @@ use crate::Function;
 
 mod error;
 mod functions;
+mod spills;
 mod state;
 
 /// Externref type as a constant.
@@ -142,12 +143,20 @@ impl<'a> Processor<'a> {
     /// Processes the provided WASM module `bytes`. This is a higher-level alternative to
     /// [`Self::process()`].
     ///
+    /// Preserves input DWARF sections and remaps code addresses using Walrus's experimental
+    /// DWARF writer. Variable locations for promoted reference spills are not rewritten.
+    /// When using [`Self::process()`] directly, enable [`walrus::ModuleConfig::generate_dwarf()`]
+    /// on the caller's parser to retain DWARF.
+    ///
     /// # Errors
     ///
     /// Returns an error if `bytes` does not represent a valid WASM module, and in all cases
     /// [`Self::process()`] returns an error.
     pub fn process_bytes(&self, bytes: &[u8]) -> Result<Vec<u8>, Error> {
-        let mut module = Module::from_buffer(bytes).map_err(Error::Wasm)?;
+        let mut module = walrus::ModuleConfig::new()
+            .generate_dwarf(true)
+            .parse(bytes)
+            .map_err(Error::Wasm)?;
         self.process(&mut module)?;
         Ok(module.emit_wasm())
     }

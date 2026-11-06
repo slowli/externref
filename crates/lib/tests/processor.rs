@@ -7,7 +7,11 @@ use externref::{
     Function, FunctionKind, TypeSlice, ValueType,
     processor::{Error, Processor},
 };
-use walrus::{ExportItem, ImportKind, Module, RawCustomSection, RefType, ValType};
+use walrus::{
+    ExportItem, FunctionId, ImportKind, LocalId, MemoryId, Module, RawCustomSection, RefType,
+    ValType,
+    ir::{BinaryOp, ExtendedLoad, Instr, LoadKind, MemArg, StoreKind},
+};
 
 const EXTERNREF: ValType = ValType::Ref(RefType::EXTERNREF);
 
@@ -103,6 +107,237 @@ fn basic_module() {
     // Check that the module is well-formed by converting it to bytes and back.
     let module_bytes = module.emit_wasm();
     Module::from_buffer(&module_bytes).unwrap();
+}
+
+fn spill_module() -> (Module, FunctionId, LocalId, MemoryId) {
+    let bytes = wat::parse_str(include_str!("modules/shadow-stack.wast")).unwrap();
+    let mut module = Module::from_buffer(&bytes).unwrap();
+    module.customs.add(RawCustomSection {
+        name: Function::CUSTOM_SECTION_NAME.to_owned(),
+        data: TEST_BYTES.to_vec(),
+    });
+    let function = module.exports.get_func("test").unwrap();
+    let local = module.funcs.get(function).kind.unwrap_local();
+    let frame = local
+        .block(local.entry_block())
+        .instrs
+        .iter()
+        .find_map(|(instruction, _)| {
+            if let Instr::LocalTee(tee) = instruction {
+                Some(tee.local)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    let memory = module.memories.iter().next().unwrap().id();
+    (module, function, frame, memory)
+}
+
+#[test]
+fn exported_arg_spilled_to_shadow_stack() {
+    let (mut module, _, _, _) = spill_module();
+    Processor::default().process(&mut module).unwrap();
+    Module::from_buffer(&module.emit_wasm()).unwrap();
+}
+
+#[test]
+fn spill_slot_can_be_reused_for_an_integer() {
+    let (mut module, function, frame, memory) = spill_module();
+    module
+        .funcs
+        .get_mut(function)
+        .kind
+        .unwrap_local_mut()
+        .builder_mut()
+        .func_body()
+        .local_get(frame)
+        .i32_const(9)
+        .store(
+            memory,
+            StoreKind::I32 { atomic: false },
+            MemArg {
+                align: 4,
+                offset: 16,
+            },
+        )
+        .local_get(frame)
+        .load(
+            memory,
+            LoadKind::I32 { atomic: false },
+            MemArg {
+                align: 4,
+                offset: 16,
+            },
+        )
+        .i32_const(1)
+        .binop(BinaryOp::I32Add)
+        .drop();
+
+    Processor::default().process(&mut module).unwrap();
+    Module::from_buffer(&module.emit_wasm()).unwrap();
+}
+
+#[test]
+fn partial_spill_load_is_rejected() {
+    let (mut module, function, frame, memory) = spill_module();
+    module
+        .funcs
+        .get_mut(function)
+        .kind
+        .unwrap_local_mut()
+        .builder_mut()
+        .func_body()
+        .local_get(frame)
+        .load(
+            memory,
+            LoadKind::I32_8 {
+                kind: ExtendedLoad::ZeroExtend,
+            },
+            MemArg {
+                align: 1,
+                offset: 17,
+            },
+        )
+        .drop();
+
+    assert_matches!(
+        Processor::default().process(&mut module),
+        Err(Error::UnsupportedReferenceSpill { .. })
+    );
+}
+
+#[test]
+fn escaping_spill_address_is_rejected() {
+    let (mut module, function, frame, _) = spill_module();
+    let ty = module.types.add(&[ValType::I32], &[]);
+    let callback = module.add_import_func("test", "inspect", ty).0;
+    module
+        .funcs
+        .get_mut(function)
+        .kind
+        .unwrap_local_mut()
+        .builder_mut()
+        .func_body()
+        .local_get(frame)
+        .i32_const(16)
+        .binop(BinaryOp::I32Add)
+        .call(callback);
+
+    assert_matches!(
+        Processor::default().process(&mut module),
+        Err(Error::UnsupportedReferenceSpill { .. })
+    );
+}
+
+#[test]
+fn escaping_spill_address_before_store_is_rejected() {
+    let (mut module, function, frame, _) = spill_module();
+    let ty = module.types.add(&[ValType::I32], &[]);
+    let callback = module.add_import_func("test", "inspect", ty).0;
+    let local = module.funcs.get_mut(function).kind.unwrap_local_mut();
+    let instructions = &mut local.block_mut(local.entry_block()).instrs;
+    let guard_index = instructions
+        .iter()
+        .position(|(instruction, _)| matches!(instruction, Instr::Call(_)))
+        .unwrap();
+    let guard = instructions.remove(guard_index);
+    instructions.insert(0, guard);
+    let first_store = instructions
+        .iter()
+        .position(|(instruction, _)| matches!(instruction, Instr::Store(_)))
+        .unwrap();
+    let inserted = [
+        Instr::LocalGet(walrus::ir::LocalGet { local: frame }),
+        Instr::Const(walrus::ir::Const {
+            value: walrus::ir::Value::I32(16),
+        }),
+        Instr::Binop(walrus::ir::Binop {
+            op: BinaryOp::I32Add,
+        }),
+        Instr::Call(walrus::ir::Call { func: callback }),
+    ];
+    instructions.splice(
+        first_store - 2..first_store - 2,
+        inserted
+            .into_iter()
+            .map(|instruction| (instruction, walrus::InstrLocId::default())),
+    );
+
+    assert_matches!(
+        Processor::default().process(&mut module),
+        Err(Error::UnsupportedReferenceSpill { .. })
+    );
+}
+
+#[test]
+fn spill_loop_type_change_is_rejected() {
+    let (mut module, function, frame, memory) = spill_module();
+    module
+        .funcs
+        .get_mut(function)
+        .kind
+        .unwrap_local_mut()
+        .builder_mut()
+        .func_body()
+        .loop_(None, |body| {
+            let target = body.id();
+            body.local_get(frame)
+                .load(
+                    memory,
+                    LoadKind::I32 { atomic: false },
+                    MemArg {
+                        align: 4,
+                        offset: 16,
+                    },
+                )
+                .drop()
+                .local_get(frame)
+                .i32_const(1)
+                .store(
+                    memory,
+                    StoreKind::I32 { atomic: false },
+                    MemArg {
+                        align: 4,
+                        offset: 16,
+                    },
+                )
+                .i32_const(0)
+                .br_if(target);
+        });
+
+    assert_matches!(
+        Processor::default().process(&mut module),
+        Err(Error::UnsupportedReferenceSpill { .. })
+    );
+}
+
+#[test]
+fn non_stack_reference_spill_is_rejected() {
+    let (mut module, function, _, memory) = spill_module();
+    let pointer = module.locals.add(ValType::I32);
+    let local = module.funcs.get_mut(function).kind.unwrap_local_mut();
+    let resource = local.args[0];
+    local
+        .builder_mut()
+        .func_body()
+        .i32_const(32)
+        .local_set(pointer)
+        .local_get(pointer)
+        .local_get(resource)
+        .store(
+            memory,
+            StoreKind::I32 { atomic: false },
+            MemArg {
+                align: 4,
+                offset: 0,
+            },
+        );
+
+    assert_matches!(
+        Processor::default().process(&mut module),
+        Err(Error::UnsupportedReferenceSpill { .. })
+    );
 }
 
 #[test]

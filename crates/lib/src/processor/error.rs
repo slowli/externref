@@ -84,6 +84,13 @@ pub enum Error {
         /// WASM bytecode offset of the offending call.
         code_offset: Option<u32>,
     },
+    /// A reference spill cannot be represented by a private function local.
+    UnsupportedReferenceSpill {
+        /// Name of the function containing the spill.
+        function_name: Option<String>,
+        /// WASM bytecode offset of the unsupported instruction.
+        code_offset: Option<u32>,
+    },
 }
 
 impl fmt::Display for Error {
@@ -175,6 +182,15 @@ impl fmt::Display for Error {
                      in {function_name}{code_offset}. {EXTERNAL_TOOL_TIP}"
                 )
             }
+            Self::UnsupportedReferenceSpill {
+                function_name,
+                code_offset,
+            } => write!(
+                formatter,
+                "unsupported externref spill in {}{}",
+                function_name.as_deref().unwrap_or("(unnamed function)"),
+                code_offset.map_or_else(String::new, |offset| format!(" at {offset}"))
+            ),
         }
     }
 }
